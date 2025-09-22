@@ -1,6 +1,8 @@
 # ValueInvestingTools
 Value Investing Tools VIT is a Python library and MCP server for Claude that supports value investing principles based fundamental equity analysis: fetch and summarize financial data, benchmark against peers, run DCF valuations with scenarios, estimate Enterprise Value and Equity Value, and save charts/CSVs for reproducible workflows.
 
+Important Disclosure - This code was co-developed with review and refactoring support of ChatGPT-5 and Claude Sonnet-4
+
 ## Table of Contents
 1. [Why this exists](#1-why-this-exists)
 2. [How to use this library](#2-how-to-use-this-library)
@@ -9,8 +11,8 @@ Value Investing Tools VIT is a Python library and MCP server for Claude that sup
 5. [Company Intrinsic Performance Factors](#5-company-intrinsic-performance-factors)
 6. [Multi-company Comparative Fundamentals](#6-multi-company-comparative-fundamentals)
 7. [Peer Multiples Comparisons](#7-peer-multiples-comparisons)
-8. [Implied EV and Equity Value](#8-implied-ev-and-equity-value)
-9. [DCF Valuation (Scenario-Based)](#9-dcf-valuation-scenario-based)
+8. [Implied Value from Historical Performance (EV & Equity)](#8-Implied-Value-from-Historical-Performance-(EV-&-Equity))
+9. [Scenario-Based Intrinsic Value (DCF with Terminal Growth))](#9-Scenario-Based-Intrinsic-Value-(DCF-with-Terminal-Growth))
 10. [Data Health Reporting](#10-data-health-reporting)
 11. [Summary of Functions](#11-summary-of-functions)
 12. [Automated Valuation Orchestrator](#12-automated-valuation-orchestrator--estimate_company_value)
@@ -22,7 +24,7 @@ ValueInvestingTools (VIT) is a Python library for fundamental equity analysis th
 
 VIT fetches statements, builds clean data sets, and runs DCF and peer-multiple valuations with ready-to-plot outputs. 
 
-This repo also ships an MCP server so Claude Desktop can call VIT functions as tools to perform calculations, generate charts & artifacts and saves outputs for reproducible workflows (Note that there is a separate readme within this repo for the MCP Server)
+This repo also ships an MCP server so Claude Desktop can call VIT functions as tools to perform calculations, generate charts & artifacts and saves outputs for reproducible workflows (Note that there is a separate readme within this repo for the MCP Server Refer to the **MCP Server Setup Guide** → [VIT-MCP_Server_SetUp_README.md](https://github.com/ZhijingEu/value-investing-tools/blob/main/VIT-MCP_Server_SetUp_README.md)
 
 Most free data sources (e.g., Yahoo Finance) provide quick snapshots, but they:
 - Mix TTM and point-in-time values inconsistently.
@@ -455,14 +457,16 @@ vit.price_from_peer_multiples(peers)
 
 If your peer_multiples result has the target excluded from the peer stats (recommended), bands are still computed correctly from peers only while overlaying the target where needed.
 
-# 8. Implied EV and Equity Value
+# 8. Implied Value from Historical Performance (EV & Equity)
 
 ## Theory
 Whereas the scenario-based DCF (Section 9) projects forward with explicit assumptions, the Implied EV module looks backward: it uses historical averages of free cash flow and growth as if they were steady-state inputs into a perpetuity growth model.
 
+Therefore it is important to note that this function **does not introduce a separate terminal growth input**; instead it uses an averaged FCF base and historical CAGR (with guardrails) and discounts at WACC.
+
 The question it answers is: "If we assume the company's average historical FCF and growth continue indefinitely, what enterprise value (EV) does that imply – and how does it compare to today's market EV?"
 
-The calculation is based on the same Perpetuity Growth Method:
+The calculation is based on the Perpetuity Growth Method:
 
 $$EV_{\text{implied}} = \frac{FCF_{\text{avg}} \cdot (1+g)}{WACC - g}$$
 
@@ -479,12 +483,15 @@ Where:
 - Firms with significant one-time items in historical FCF
 
 ## Options & defaults
-- **Function**: `dcf_implied_enterprise_value(ticker, window_years=5, risk_free_rate=0.045, equity_risk_premium=0.055)`
-- **Defaults**:
-  - `window_years=5` → historical lookback window.
-  - `risk_free_rate=0.045, equity_risk_premium=0.055`.
-  - Growth cap: always enforced at WACC − 0.5%.
-  - Returns: a float (implied EV).
+**Balanced (default)** — conservative-leaning, history-anchored:
+- Risk-free rate: **4.5%**
+- Equity risk premium: **6.0%** 
+- Fallback FCF growth: **2.0%**, with guardrail **g ≤ WACC − 0.5%**
+- FCF base window: **3 years** average by default
+- DCF horizon: **3 years**, then terminal (DCF only)
+
+- **More Conservative (quick stress test, optional)** — use when rates/risks feel elevated:
+- Keep the above, and optionally set `years=1/2/3`, or use `cf_base="recent_weighted"` / `recency_weight=0.6` (see function args) to emphasize latest years.
 
 ## Market Comparison
 
@@ -527,7 +534,7 @@ $$\text{Per-Share Implied} = \frac{\text{Equity}}{\text{Shares Outstanding}}$$
 
 Implemented via `compare_to_market_cap`
 
-`compare_to_market_cap(ticker_or_evdf, *, years=None, risk_free_rate=0.045, equity_risk_premium=0.055, growth=None, target_cagr_fallback=0.03, use_average_fcf_years=None, volatility_threshold=0.5, as_df=True, analysis_report_date=None)`
+`compare_to_market_cap(ticker_or_evdf, *, years=None, risk_free_rate=0.045, equity_risk_premium=0.060, growth=None, target_cagr_fallback=0.02, use_average_fcf_years=None, volatility_threshold=0.5, as_df=True, analysis_report_date=None)`
 
 **Purpose**: Compares Implied Equity Value (derived from implied EV) with Observed Market Capitalization from Yahoo Finance.
 
@@ -581,7 +588,7 @@ fig, ax = plot_market_cap_observed_vs_implied_equity_val(df_cap, save_path="aapl
 - Cyclical businesses (timing of cycle affects results significantly)
 - Companies with major recent strategic changes
 
-# 9. DCF Valuation (Scenario-Based)
+# 9. Scenario-Based Intrinsic Value (DCF with Terminal Growth)
 
 ## Theory
 Discounted Cash Flow (DCF) estimates enterprise value by discounting a finite stream of cash flows plus a terminal value:
@@ -595,6 +602,13 @@ $EV_{\text{implied}} = \sum_{t=1}^{N} \frac{FCF_t}{(1+WACC)^t} \;+\; \frac{TV}{(
 This library uses a three-scenario approach (Low / Mid / High) to bracket uncertainty without false precision.
 
 ## Key Methodology
+
+This runs **DCF scenarios (Low/Mid/High)** with an explicit **terminal growth** model. Defaults are slightly tightened vs earlier versions:
+- **Equity Risk Premium** 6.0%
+- **Fallback FCF growth** 2.0% 
+- **FCF window** 3 years by default.
+- The terminal‐growth guardrail `g ≤ WACC − 0.5%`.
+
 **WACC calculation** that includes both equity and debt costs:
 $WACC = \frac{E}{V} \times R_e + \frac{D}{V} \times R_d \times (1-T)$
 
@@ -646,8 +660,8 @@ Returns DataFrame with columns: Scenario, Growth_Used, WACC_Used, Per_Share_Valu
 
 ## Options & defaults (quick reference)
 - `years=5` horizon (terminal at year 5).
-- `risk_free_rate=0.045, equity_risk_premium=0.055`.
-- `target_cagr_fallback=0.03` if peer/target growth is unavailable.
+- `risk_free_rate=0.045, equity_risk_premium=0.06`.
+- `target_cagr_fallback=0.02` if peer/target growth is unavailable.
 - `peer_tickers=[...]` optionally seeds growth from peer FCF CAGRs (P25/P50/P75).
 - Growth always capped at WACC − 0.5%.
 - Requires beta; missing beta → error.
@@ -666,8 +680,8 @@ df = vit.dcf_three_scenarios(
     peer_tickers=["AAPL","GOOG","MSFT"],  # optional but recommended for better growth seeding
     years=5,
     risk_free_rate=0.045,
-    equity_risk_premium=0.055,
-    target_cagr_fallback=0.03
+    equity_risk_premium=0.060,
+    target_cagr_fallback=0.02
 )
 print(df)
 
@@ -886,10 +900,10 @@ orchestrator_function(
     include_target_in_peers: bool = False,
     years: int = 5,
     risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.055,
+    equity_risk_premium: float = 0.060,
     growth: float | None = None,
-    target_cagr_fallback: float = 0.03,
-    use_average_fcf_years: int | None = None,
+    target_cagr_fallback: float = 0.02,
+    use_average_fcf_years: Optional[int]=3,
     volatility_threshold: float = 0.5,
     basis: str = "annual",
     save_csv: bool = False,

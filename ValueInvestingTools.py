@@ -2057,11 +2057,11 @@ def dcf_three_scenarios(
     peer_tickers: Optional[List[str]] = None,   # optional seeding
     years: int = 5,
     risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.055,
-    target_cagr_fallback: float = 0.03,
+    equity_risk_premium: float = 0.060,
+    target_cagr_fallback: float = 0.02,
     
     # NEW: Advanced controls for transformational companies
-    fcf_window_years: Optional[int] = None,     # Limit FCF history (None = use all)
+    fcf_window_years: int | None = 3,     # set default window to latest 3Y FCF
     manual_baseline_fcf: Optional[float] = None, # Override FCF baseline (None = calculated)
     manual_growth_rates: Optional[List[float]] = None, # [low, mid, high] growth override
     
@@ -2237,10 +2237,10 @@ def dcf_implied_enterprise_value(
     *,
     years: Optional[int] = None,             # None => perpetuity-only (Gordon Growth)
     risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.055,
+    equity_risk_premium: float = 0.060,
     growth: Optional[float] = None,          # if None → use FCF CAGR first, then revenue CAGR; fallback 3%
-    target_cagr_fallback: float = 0.03,
-    use_average_fcf_years: Optional[int] = None,   # None → use ALL available FCF points
+    target_cagr_fallback: float = 0.02,
+    use_average_fcf_years: Optional[int] = 3,   # None → use ALL available FCF points
     volatility_threshold: float = 0.5,       # coefficient of variation threshold for a volatility note
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
@@ -2389,10 +2389,10 @@ def compare_to_market_ev(
     *,
     years: Optional[int] = None,             # None => perpetuity-only mode in implied EV step
     risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.055,
+    equity_risk_premium: float = 0.060,
     growth: Optional[float] = None,
-    target_cagr_fallback: float = 0.03,
-    use_average_fcf_years: Optional[int] = None,  # None → use all FCF points
+    target_cagr_fallback: float = 0.02,
+    use_average_fcf_years: int | None = 3,  
     volatility_threshold: float = 0.5,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
@@ -2613,10 +2613,10 @@ def compare_to_market_cap(
     *,
     years: Optional[int] = None,                  # mirrors compare_to_market_ev
     risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.055,
+    equity_risk_premium: float = 0.060,
     growth: Optional[float] = None,
-    target_cagr_fallback: float = 0.03,
-    use_average_fcf_years: Optional[int] = None,  # None → use all FCF points
+    target_cagr_fallback: float = 0.02,
+    use_average_fcf_years: int | None = 3,  
     volatility_threshold: float = 0.5,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
@@ -2824,10 +2824,10 @@ def orchestrator_function(
     include_target_in_peers: bool = False,
     years: int = 5,
     risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.055,
+    equity_risk_premium: float = 0.060,
     growth: Optional[float] = None,
-    target_cagr_fallback: float = 0.03,
-    use_average_fcf_years: Optional[int] = None,
+    target_cagr_fallback: float = 0.02,
+    use_average_fcf_years: Optional[int] = 3,
     volatility_threshold: float = 0.5,
     basis: Literal["annual","ttm"] = "annual",
     save_csv: bool = False,
