@@ -1,0 +1,10 @@
+# Core data/plotting stack
+pandas>=2.1
+numpy>=1.24
+matplotlib>=3.7
+yfinance>=0.2.40
+xlsxwriter>=3.1
+
+# MCP server
+mcp>=1.2.0
+fastmcp>=2.12.0

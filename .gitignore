@@ -1,0 +1,32 @@
+# --- generated artifacts (charts, csvs, etc.) ---
+output/
+**/output/
+
+# --- python caches & builds ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# --- notebooks ---
+.ipynb_checkpoints/
+
+# --- virtual envs ---
+vit-env/
+venv/
+.venv/
+env/
+.python-version
+
+# --- editors / OS junk ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- local configs / secrets (examples) ---
+*.env
+*secrets*.json
+claude_desktop_config*.json
