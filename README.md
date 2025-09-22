@@ -22,7 +22,7 @@ ValueInvestingTools (VIT) is a Python library for fundamental equity analysis th
 
 VIT fetches statements, builds clean data sets, and runs DCF and peer-multiple valuations with ready-to-plot outputs. 
 
-This repo also ships an MCP server so Claude Desktop can call VIT functions as tools to perform calculations, generate charts & artifacts and saves outputs for reproducible workflows (Note that there is a separate readme within this repo for the MCP Server)
+This repo also ships an MCP server so Claude Desktop can call VIT functions as tools to perform calculations, generate charts & artifacts and saves outputs for reproducible workflows (Note that there is a separate readme within this repo for the MCP Server. Refer to the **MCP Server Setup Guide** → [VIT-MCP_Server_SetUp_README.md](https://github.com/ZhijingEu/value-investing-tools/blob/main/VIT-MCP_Server_SetUp_README.md)
 
 Most free data sources (e.g., Yahoo Finance) provide quick snapshots, but they:
 - Mix TTM and point-in-time values inconsistently.
