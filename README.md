@@ -122,13 +122,15 @@ Outputs should be treated as a consistent analytical baseline, not an investment
 ## Theory
 Every company has a set of intrinsic drivers that shape its long-term value, regardless of short-term market noise. 
 
+While there are other predictive scoring systems like F-Score or Z-Score, VIT provides a heuristic/diagnostic framework that helps to structure the comparison between the financial performance of companies along the lens of four key drivers with transparent thresholds.
+
 These drivers fall into four broad categories:
 - **Profitability** – efficiency in generating returns on capital and margins.
 - **Growth** – ability to scale revenues and earnings over time.
 - **Reinvestment** – discipline and capacity to reinvest earnings to compound value.
 - **Risk** – balance sheet strength and exposure to volatility.
 
-By scoring these factors consistently across companies and time, we create a deterministic baseline of financial quality that can be compared across industries and cycles.
+By scoring these factors consistently across companies and time, this creates a deterministic baseline of financial quality that can be compared across industries and cycles.
 
 Unlike relative rankings (z-scores), this framework uses absolute thresholds so that:
 - A score of 5 always means "excellent" in real financial terms, not just "better than peers."
