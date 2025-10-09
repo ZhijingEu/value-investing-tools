@@ -43,6 +43,14 @@ The implementation approach is **modular and progressive** — starting with fun
   - YoY growth charts (for Growth metrics)  
   - Multi-ticker overlays  
 
+**Artifacts / Completion Criteria**
+- Contract test: tests/test_fundamentals_contract.py: Asserts the return schema keys: method, pillar_scores, overall_scores, subfactor_scores, data_health. and verifies tie-ranking average and N<5 warning present.
+- Golden CSVs: tests/golden/MDLZ_peer_set_input.csv (5–6 tickers) and tests/golden/MDLZ_fundamentals_output.json (one canonical run).
+- Threshold sanity test: Parametrized unit test that feeds synthetic metrics to hit each absolute band (1–5) and checks scores.
+- Plot smoke test:Save one PNG per chart type; assert image created and non-zero size (no visual diffing yet).
+- `tests/test_directionality_flags.py`: verify inversion logic for metrics where lower is better (e.g., D/E, Beneish M).
+- `tests/test_altman_financial_warning.py`: ensure data_health warning triggers for Financials sector tickers.
+
 ✅ **Output:** `compute_fundamentals_score()` and `compute_fundamentals_actuals()` upgraded; end-to-end peer comparison working.
 
 ---
@@ -55,6 +63,10 @@ The implementation approach is **modular and progressive** — starting with fun
 - Integrate optional display into orchestrator output  
 - Document academic references and formulae in README  
 - Unit-test sample tickers for consistency  
+
+**Artifacts / Completion Criteria**
+- Component flags test: Synthetic two-period inputs that flip each of the 9 signals one by one; assert total equals sum of flags.
+- Docs note: Source references + any licenses in README section “Attribution”.
 
 ✅ **Output:** F-Score appears as optional reference panel alongside the Fundamentals summary.
 
@@ -71,6 +83,10 @@ The implementation approach is **modular and progressive** — starting with fun
 
 ✅ **Output:** One-call notebook or MCP tool generates a practitioner-ready fundamentals report.
 
+**Artifacts / Completion Criteria**
+- End-to-end notebook: notebooks/peer_report_demo.ipynb that runs Absolute → Peer → (Optional) Piotroski, saving outputs.
+- JSON schema check:schemas/fundamentals_report.schema.json and test that validates orchestrator output.
+
 ---
 
 ## Phase 5 — Profiles for Valuation Modules
@@ -83,6 +99,9 @@ The implementation approach is **modular and progressive** — starting with fun
 - Profiles adjust WACC, growth, terminal-g assumptions; fundamentals remain profile-agnostic.  
 - Add profile metadata to output JSON for traceability.  
 
+**Artifacts / Completion Criteria**
+- `tests/test_profiles_echo.py` verifies `valuation_profile` metadata (name + effective params) in outputs.
+
 ✅ **Output:** Valuation modules parameterised for scenario analysis.
 
 ---
@@ -94,6 +113,10 @@ The implementation approach is **modular and progressive** — starting with fun
 - Implement forecast generators (manual entry + growth-based)  
 - Add detailed PV breakdown tables (per year + terminal component)  
 - Retain compatibility with DCF and implied EV functions  
+
+**Artifacts / Completion Criteria**
+- `tests/test_forecast_validator.py` rejects non-monotonic years, NaNs, length mismatches, missing fields.
+- `tests/test_valuation_audit_table.py` validates PV and terminal value against a hand-computed toy case (within tolerance).
 
 ✅ **Output:** Valuation engine with auditable forecast inputs.
 
@@ -111,6 +134,11 @@ The implementation approach is **modular and progressive** — starting with fun
   - DCF vs Price bands  
   - Sensitivity plots (g vs WACC)  
 - Integrate profile controls.  
+
+**Artifacts / Completion Criteria**
+- `tests/test_compare_to_market_ev_integration.py` end-to-end integration with Forecast engine and profile echo present.
+- `tests/test_dcf_three_scenarios_plots.py` chart smoke tests (non-zero image size, expected titles/labels).
+- `tests/golden/valuation_output.json` snapshot for one canonical ticker (regression guard).
 
 ✅ **Output:** Valuation visualisation suite aligned with forecast engine.
 
@@ -134,6 +162,9 @@ The implementation approach is **modular and progressive** — starting with fun
 - Update `server.py` (stdio MCP) to include new fundamentals and F-Score tools  
 - Add `server_http.py` (HTTP / SSE) for future ChatGPT integration  
 - Optional: configure ngrok / localtunnel exposure for testing  
+
+**Artifacts / Completion Criteria**
+-  Tool manifest test: Both stdio and HTTP handlers return identical JSON for the same input.
 
 ✅ **Output:** Agents can invoke fundamentals and valuation functions locally or via HTTP.
 

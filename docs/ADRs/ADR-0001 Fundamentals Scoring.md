@@ -48,13 +48,29 @@ Adopt a **4 pillars × 4 sub-factors** framework with **three scoring modes** an
 ---
 
 ## Scoring Modes
-All share a “bigger = better” convention.
+All share a “bigger = better” convention (Note please read below clarification)
 
 1. **Rank-based (default)** – within a peer set of N tickers, assign rank N (best)…1 (worst).  
    - Ties → average ranks (e.g., 6, 5, 4, 2.5, 2.5, 1).  
    - Warn if N < 5 in data-health output.  
 2. **Absolute thresholds (1–5 bands)** – see table below.  
 3. **Peer-set Z-score** – computed across peer set; invert where lower = better.
+
+### Clarification: “Bigger Is Better” Refers to Scores, Not Raw Metrics
+
+The phrase “bigger is better” throughout this ADR applies **only to the scoring output**
+(Rank, Absolute Threshold, or Z-Score), not the underlying raw financial metrics.
+
+Some metrics are beneficial when larger (e.g., ROE, Net Margin, FCF Margin),
+while others are preferable when smaller (e.g., Debt/Equity, CapEx/Revenue, Beneish M).
+
+Each sub-factor carries a `higher_is_better` flag so that:
+- Rank scores invert when a metric is “lower is better.”
+- Absolute thresholds flip the lookup direction.
+- Z-scores are sign-adjusted (multiplied by –1) where needed.
+
+This guarantees that all **scores** remain on a consistent “higher = better” scale,
+even when the raw metric direction differs.
 
 ---
 
@@ -79,6 +95,19 @@ All share a “bigger = better” convention.
 | Altman Z | < 1.8 | 1.8–2.2 | 2.2–2.9 | 2.9–3.5 | > 3.5 | ↑ |
 | Beneish M | > –1.5 | –1.7 to –1.5 | –1.9 to –1.7 | –2.1 to –1.9 | < –2.1 | ↓ |
 
+### Note on Altman Z Applicability
+
+The absolute-band thresholds for **Altman Z** are calibrated for **non-financial corporates**
+(industrials, consumer, tech, etc.).  
+They are **not appropriate for banks, insurance companies, or other financial institutions**
+whose balance-sheet structures differ fundamentally.
+
+When analyzing financial-sector tickers:
+
+- Prefer **Rank** or **peer-set Z-Score** modes over absolute bands.
+- The system will emit a `data_health.warning` such as:
+  “Altman Z absolute thresholds calibrated for non-financials; use Rank/Z for financials.”
+  
 ---
 
 ## Pillar & Overall Scores

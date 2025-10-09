@@ -6,6 +6,9 @@ This file serves as a running log of technical and conceptual decisions across p
 It complements the ADRs and ROADMAP, providing context for key changes, rationale, and implementation nuances.
 
 ---
+## 2025-10-10 — Clarifications Added (ADR-0001)
+- Defined that “bigger = better” applies to **scores**, not raw metric values; direction handled per-metric via flags.
+- Added explicit note on **Altman Z** threshold applicability (non-financial calibration) and corresponding data-health warning.
 
 ## 2025-10-09 — Fundamentals Redesign (ADR-0001)
 - **Objective:** Rebuild the fundamentals module into a **MECE 4×4 framework** with balanced pillars and transparent scoring.
