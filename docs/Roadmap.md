@@ -178,3 +178,5 @@ The implementation approach is **modular and progressive** — starting with fun
 - Document findings and future enhancements  
 
 ✅ **Output:** Calibrated and empirically supported scoring system.
+
+Reference artifact: docs/Calibration_Backtest_Plan.md
