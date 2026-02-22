@@ -1,180 +1,195 @@
-# Value Investing Tools – Development Roadmap
+# Value Investing Tools - Development Roadmap
 
-_Last updated: 2025-10-09_
+_Last updated: 2026-02-22_
 
-This roadmap reflects the architectural direction and sequencing agreed in ADR-0001 (Fundamentals 4×4 Framework) and ADR-0002 (Piotroski F-Score Module).  
-The implementation approach is **modular and progressive** — starting with fundamentals and peer comparison, then extending to valuation, forecasting, and multi-agent integration.
+This roadmap tracks target architecture from ADR-0001 through ADR-0006.
+It is a planning document, not a completion log.
 
----
+## Current Implementation Snapshot
 
-## Phase 1 — Stabilise Defaults & Documentation
-**Goal:** Ensure current functions run consistently before introducing new frameworks.
+Implemented in the current repository:
+- `compute_fundamentals_actuals()` and `compute_fundamentals_scores()` (12-metric model).
+- Valuation flows: `dcf_three_scenarios()`, `compare_to_market_ev()`, `compare_to_market_cap()`.
+- MCP stdio server in `server.py`.
 
-- Validate and document valuation defaults  
-  - Risk-free rate = 4.5 %  
-  - Equity risk premium = 5.5 % (≈ 6 %)  
-  - Fallback growth = 2 %  
-  - FCF look-back window = 3 years  
-- Update main README  
-  - Clarify difference between *Implied Value* vs *DCF Scenarios*  
-  - Add quick-reference “Defaults & Profiles” section  
-- Minor smoke-tests using MDLZ example  
+Not implemented yet (still planned):
+- ADR-0001 full 4x4 fundamentals framework (`compute_fundamentals_score` singular API).
+- ADR-0002 Piotroski module (`piotroski_fscore`, `plot_piotroski_fscore`).
+- ADR-0004 valuation profile system and `valuation_profile` metadata.
+- ADR-0005 `Forecast` dataclass pipeline.
+- ADR-0006 HTTP/SSE server companion (`server_http.py`) and shared manifest tests.
 
-✅ **Output:** Documentation refresh and working baseline.
-
----
-
-## Phase 2 — Fundamentals Revamp (ADR-0001)
-**Goal:** Implement the new **MECE 4×4 Fundamentals Scorecard** with three scoring modes and weighted composite.
-
-- Create unified data schema with four pillars × four sub-factors each  
-  - *Profitability, Growth, Reinvestment, Risk*  
-  - Risk pillar now includes **Altman Z** and **Beneish M**  
-- Add scoring modes  
-  - **Rank-based** (default)  
-  - **Absolute thresholds** (1–5 bands per ADR-0001 table)  
-  - **Peer-set Z-score** (dynamic per run)  
-- Support multi-ticker input  
-- Implement `data_health` reporting (warn if N < 5 tickers)  
-- Drop tickers with missing sub-factors  
-- Return unified structured object + DataFrames + Matplotlib figures  
-- Extend plotting  
-  - Annual sub-factor series  
-  - YoY growth charts (for Growth metrics)  
-  - Multi-ticker overlays  
-
-**Artifacts / Completion Criteria**
-- Contract test: tests/test_fundamentals_contract.py: Asserts the return schema keys: method, pillar_scores, overall_scores, subfactor_scores, data_health. and verifies tie-ranking average and N<5 warning present.
-- Golden CSVs: tests/golden/MDLZ_peer_set_input.csv (5–6 tickers) and tests/golden/MDLZ_fundamentals_output.json (one canonical run).
-- Threshold sanity test: Parametrized unit test that feeds synthetic metrics to hit each absolute band (1–5) and checks scores.
-- Plot smoke test:Save one PNG per chart type; assert image created and non-zero size (no visual diffing yet).
-- `tests/test_directionality_flags.py`: verify inversion logic for metrics where lower is better (e.g., D/E, Beneish M).
-- `tests/test_altman_financial_warning.py`: ensure data_health warning triggers for Financials sector tickers.
-
-✅ **Output:** `compute_fundamentals_score()` and `compute_fundamentals_actuals()` upgraded; end-to-end peer comparison working.
+Status labels used below:
+- `Planned`: target work not complete in current tree.
+- `In Progress`: partially implemented.
+- `Completed`: delivered and validated with tests/docs.
 
 ---
 
-## Phase 3 — Piotroski F-Score Module (ADR-0002)
-**Goal:** Add a credible standalone reference score without overlapping the 4×4 framework.
+## Phase 1 - Stabilise Defaults & Documentation
+Status: `In Progress`
 
-- Implement `piotroski_fscore(ticker|statements)` returning total (0–9) + component flags  
-- Add `plot_piotroski_fscore()` visualisation  
-- Integrate optional display into orchestrator output  
-- Document academic references and formulae in README  
-- Unit-test sample tickers for consistency  
+Goal:
+- Ensure valuation defaults and usage docs are consistent.
 
-**Artifacts / Completion Criteria**
-- Component flags test: Synthetic two-period inputs that flip each of the 9 signals one by one; assert total equals sum of flags.
-- Docs note: Source references + any licenses in README section “Attribution”.
+Targets:
+- Validate baseline defaults in code and README.
+- Add quick-reference defaults section.
+- Add minimal smoke checks for one sample ticker flow.
 
-✅ **Output:** F-Score appears as optional reference panel alongside the Fundamentals summary.
-
----
-
-## Phase 4 — Presentation & Orchestrator (Up to Peers)
-**Goal:** Produce consolidated reports for fundamentals and peer analysis only.
-
-- Standardise orchestrator flow  
-  - **Absolute → Peer → Reference (Piotroski)**  
-- Include Data Health section and per-metric annual charts  
-- Harmonise JSON / DataFrame / figure outputs for easy downstream use  
-- Stop execution before any valuation logic  
-
-✅ **Output:** One-call notebook or MCP tool generates a practitioner-ready fundamentals report.
-
-**Artifacts / Completion Criteria**
-- End-to-end notebook: notebooks/peer_report_demo.ipynb that runs Absolute → Peer → (Optional) Piotroski, saving outputs.
-- JSON schema check:schemas/fundamentals_report.schema.json and test that validates orchestrator output.
+Deliverable:
+- Documentation and defaults aligned to implementation.
 
 ---
 
-## Phase 5 — Profiles for Valuation Modules
-**Goal:** Introduce **Conservative / Moderate / Speculative** configuration profiles for valuation-related tools only.
+## Phase 2 - Fundamentals Revamp (ADR-0001)
+Status: `Planned`
 
-- Apply profiles to  
-  - `compare_to_market_ev()`  
-  - `compare_to_market_cap()`  
-  - `dcf_three_scenarios()`  
-- Profiles adjust WACC, growth, terminal-g assumptions; fundamentals remain profile-agnostic.  
-- Add profile metadata to output JSON for traceability.  
+Goal:
+- Implement MECE 4x4 framework with rank/absolute/z-score modes.
 
-**Artifacts / Completion Criteria**
-- `tests/test_profiles_echo.py` verifies `valuation_profile` metadata (name + effective params) in outputs.
+Targets:
+- 4 pillars x 4 sub-factors.
+- Risk pillar includes Altman Z and Beneish M.
+- Unified response schema with data-health diagnostics.
+- Plotting support for sub-factors and overlays.
 
-✅ **Output:** Valuation modules parameterised for scenario analysis.
-
----
-
-## Phase 6 — Forecast Object & Valuation Engine
-**Goal:** Build a clean separation between data, forecast assumptions, and valuation computation.
-
-- Define a reusable `Forecast` dataclass (schema)  
-- Implement forecast generators (manual entry + growth-based)  
-- Add detailed PV breakdown tables (per year + terminal component)  
-- Retain compatibility with DCF and implied EV functions  
-
-**Artifacts / Completion Criteria**
-- `tests/test_forecast_validator.py` rejects non-monotonic years, NaNs, length mismatches, missing fields.
-- `tests/test_valuation_audit_table.py` validates PV and terminal value against a hand-computed toy case (within tolerance).
-
-✅ **Output:** Valuation engine with auditable forecast inputs.
+Completion criteria:
+- `tests/test_fundamentals_contract.py`
+- threshold/directionality tests
+- Financials-sector Altman warning test
+- golden snapshot for canonical peer set
 
 ---
 
-## Phase 7 — Valuation Wrappers & Charts
-**Goal:** Modernise comparison utilities and visualisations.
+## Phase 3 - Piotroski F-Score (ADR-0002)
+Status: `Planned`
 
-- Refactor  
-  - `compare_to_market_ev()`  
-  - `compare_to_market_cap()`  
-  - `dcf_three_scenarios()`  
-- Add charts  
-  - Market vs Intrinsic EV  
-  - DCF vs Price bands  
-  - Sensitivity plots (g vs WACC)  
-- Integrate profile controls.  
+Goal:
+- Add standalone Piotroski reference module.
 
-**Artifacts / Completion Criteria**
-- `tests/test_compare_to_market_ev_integration.py` end-to-end integration with Forecast engine and profile echo present.
-- `tests/test_dcf_three_scenarios_plots.py` chart smoke tests (non-zero image size, expected titles/labels).
-- `tests/golden/valuation_output.json` snapshot for one canonical ticker (regression guard).
+Targets:
+- `piotroski_fscore(ticker|statements)`
+- `plot_piotroski_fscore(...)`
+- Optional orchestrator integration
 
-✅ **Output:** Valuation visualisation suite aligned with forecast engine.
+Completion criteria:
+- Component-flag unit tests (all 9 signals)
+- README references and attribution section updates
 
 ---
 
-## Phase 8 — End-to-End Examples & Docs
-**Goal:** Publish reference notebooks and user documentation.
+## Phase 4 - Fundamentals + Peer Presentation Layer
+Status: `Planned`
 
-- Case 1 – Staples sector peer comparison  
-- Case 2 – Tech sector with manual forecasts  
-- Write narrative: **Absolute → Peer → Valuation**  
-- Update README with screenshots and function map.  
+Goal:
+- Produce consolidated fundamentals-first reports.
 
-✅ **Output:** Two ready-to-run Jupyter notebooks + illustrated README.
+Targets:
+- Standardized flow: Absolute -> Peer -> (Optional) Piotroski
+- Harmonized JSON/DataFrame/figure outputs
+- Data-health section in report outputs
 
----
-
-## Phase 9 — MCP Integration & HTTP/SSE Server
-**Goal:** Connect tools to agentic workflows (Claude Desktop / ChatGPT Dev Mode).
-
-- Update `server.py` (stdio MCP) to include new fundamentals and F-Score tools  
-- Add `server_http.py` (HTTP / SSE) for future ChatGPT integration  
-- Optional: configure ngrok / localtunnel exposure for testing  
-
-**Artifacts / Completion Criteria**
--  Tool manifest test: Both stdio and HTTP handlers return identical JSON for the same input.
-
-✅ **Output:** Agents can invoke fundamentals and valuation functions locally or via HTTP.
+Completion criteria:
+- notebook demo
+- schema validation test for report contract
 
 ---
 
-## Phase 10 — Calibration & Back-Testing
-**Goal:** Validate threshold bands and scoring weights.
+## Phase 5 - Valuation Profiles (ADR-0004)
+Status: `Planned`
 
-- Back-test quartile performance on historical data  
-- Review threshold distributions and adjust band limits  
-- Document findings and future enhancements  
+Goal:
+- Add Conservative / Moderate / Speculative profiles for valuation modules.
 
-✅ **Output:** Calibrated and empirically supported scoring system.
+Targets:
+- Profile argument support in:
+  - `compare_to_market_ev()`
+  - `compare_to_market_cap()`
+  - `dcf_three_scenarios()`
+- Echo effective assumptions in outputs.
+
+Completion criteria:
+- profile metadata contract test
+
+---
+
+## Phase 6 - Forecast Object (ADR-0005)
+Status: `Planned`
+
+Goal:
+- Separate forecast schema from valuation engines.
+
+Targets:
+- `Forecast` dataclass
+- forecast validation helper
+- valuation functions accept ticker or forecast object
+
+Completion criteria:
+- forecast validation tests
+- valuation audit-table test on toy case
+
+---
+
+## Phase 7 - Valuation Wrapper Hardening
+Status: `In Progress`
+
+Goal:
+- Improve reliability and diagnostics in EV/DCF wrappers.
+
+Targets:
+- tighten error handling and notes
+- plot smoke checks and integration checks
+- add regression tests for valuation bridges
+
+Completion criteria:
+- integration tests for EV/cap/DCF wrappers
+- chart smoke tests with non-zero artifacts
+
+---
+
+## Phase 8 - End-to-End Examples and Documentation
+Status: `Planned`
+
+Goal:
+- Publish end-to-end notebook examples and screenshots.
+
+Targets:
+- staples peer workflow notebook
+- tech workflow notebook with manual assumptions
+- update README function map and examples
+
+Completion criteria:
+- reproducible notebooks with saved outputs
+
+---
+
+## Phase 9 - MCP Transport Expansion (ADR-0006)
+Status: `Planned`
+
+Goal:
+- Support both stdio and HTTP/SSE transports with consistent contracts.
+
+Targets:
+- keep `server.py` as stdio default
+- add `server_http.py` with mirrored endpoints
+- maintain a shared manifest for transport mapping
+
+Completion criteria:
+- contract parity tests between stdio and HTTP/SSE responses
+
+---
+
+## Phase 10 - Calibration and Backtesting
+Status: `Planned`
+
+Goal:
+- Empirically calibrate scoring thresholds and weights.
+
+Targets:
+- backtest quartiles over historical data
+- review threshold distributions by sector
+- publish calibration notes and versioned updates
+
+Completion criteria:
+- reproducible calibration scripts and report artifact
