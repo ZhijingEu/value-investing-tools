@@ -108,6 +108,37 @@ def to_records(obj, analysis_report_date: Optional[str] = None, schema_version: 
         "notes": notes or []
     }
 
+
+# Centralized valuation defaults (can be overridden per call).
+VALUATION_DEFAULTS: Dict[str, float] = {
+    "risk_free_rate": 0.045,
+    "equity_risk_premium": 0.060,
+    "target_cagr_fallback": 0.020,
+    "fcf_window_years": 3,
+    "terminal_growth_gap": 0.005,  # g <= WACC - gap
+}
+
+
+def valuation_defaults(
+    *,
+    as_of_date: Optional[str] = None,
+    risk_free_rate: Optional[float] = None,
+    equity_risk_premium: Optional[float] = None,
+    target_cagr_fallback: Optional[float] = None,
+    fcf_window_years: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Return a normalized assumptions payload for valuation outputs and audits.
+    """
+    return {
+        "as_of_date": as_of_date or _today_iso(),
+        "risk_free_rate": VALUATION_DEFAULTS["risk_free_rate"] if risk_free_rate is None else float(risk_free_rate),
+        "equity_risk_premium": VALUATION_DEFAULTS["equity_risk_premium"] if equity_risk_premium is None else float(equity_risk_premium),
+        "target_cagr_fallback": VALUATION_DEFAULTS["target_cagr_fallback"] if target_cagr_fallback is None else float(target_cagr_fallback),
+        "fcf_window_years": VALUATION_DEFAULTS["fcf_window_years"] if fcf_window_years is None else int(fcf_window_years),
+        "terminal_growth_gap": VALUATION_DEFAULTS["terminal_growth_gap"],
+    }
+
 # ==========================================================
 # FUNDAMENTALS (actuals first; scores on demand; optional merge)
 # (Derived from your FundamentalFactorsTool_Ver2.py)
@@ -2089,14 +2120,15 @@ def dcf_three_scenarios(
     *,
     peer_tickers: Optional[List[str]] = None,   # optional seeding
     years: int = 5,
-    risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.060,
-    target_cagr_fallback: float = 0.02,
+    risk_free_rate: float = VALUATION_DEFAULTS["risk_free_rate"],
+    equity_risk_premium: float = VALUATION_DEFAULTS["equity_risk_premium"],
+    target_cagr_fallback: float = VALUATION_DEFAULTS["target_cagr_fallback"],
     
     # NEW: Advanced controls for transformational companies
-    fcf_window_years: int | None = 3,     # set default window to latest 3Y FCF
+    fcf_window_years: int | None = VALUATION_DEFAULTS["fcf_window_years"],     # set default window to latest 3Y FCF
     manual_baseline_fcf: Optional[float] = None, # Override FCF baseline (None = calculated)
     manual_growth_rates: Optional[List[float]] = None, # [low, mid, high] growth override
+    assumptions_as_of: Optional[str] = None,
     
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
@@ -2117,6 +2149,13 @@ def dcf_three_scenarios(
     analysis_report_date = analysis_report_date or _today_iso()
     t = _sanitize_ticker(ticker)
     snap = _pull_company_snapshot(t)
+    assumptions_used = valuation_defaults(
+        as_of_date=assumptions_as_of or analysis_report_date,
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        target_cagr_fallback=target_cagr_fallback,
+        fcf_window_years=fcf_window_years,
+    )
     
     # Initialize notes list FIRST
     notes = []
@@ -2152,9 +2191,9 @@ def dcf_three_scenarios(
     if not _is_pos(avg_fcf):
         notes.append("FCF baseline not positive; per-share values will be None.")
         df = pd.DataFrame([
-            {"Scenario": "DCF_Lo_Growth_Lo_WACC", "Growth_Used": None, "WACC_Used": wacc_low, "Per_Share_Value": None},
-            {"Scenario": "DCF_Mid_Growth_Mid_WACC","Growth_Used": None, "WACC_Used": wacc_mid, "Per_Share_Value": None},
-            {"Scenario": "DCF_Hi_Growth_Hi_WACC", "Growth_Used": None, "WACC_Used": wacc_high, "Per_Share_Value": None},
+            {"Scenario": "DCF_Lo_Growth_Lo_WACC", "Growth_Used": None, "WACC_Used": wacc_low, "Per_Share_Value": None, "Assumptions_Used": assumptions_used},
+            {"Scenario": "DCF_Mid_Growth_Mid_WACC","Growth_Used": None, "WACC_Used": wacc_mid, "Per_Share_Value": None, "Assumptions_Used": assumptions_used},
+            {"Scenario": "DCF_Hi_Growth_Hi_WACC", "Growth_Used": None, "WACC_Used": wacc_high, "Per_Share_Value": None, "Assumptions_Used": assumptions_used},
         ])
         if as_df:
             return df
@@ -2206,7 +2245,8 @@ def dcf_three_scenarios(
     def _cap(g, w): 
         if not _is_num(g) or not _is_num(w):
             return None
-        return min(max(g, -0.05), w - 0.005)  # Also floor at -5%
+        gap = assumptions_used["terminal_growth_gap"]
+        return min(max(g, -0.05), w - gap)  # Also floor at -5%
     
     # CORRECTED: Match risk levels properly
     gL = _cap(g_low, wacc_low)      # Low growth, low WACC
@@ -2231,9 +2271,9 @@ def dcf_three_scenarios(
             notes.append(f"Note: EV/FCF multiple of {ev_fcf_multiple:.1f}x is relatively low.")
 
     df = pd.DataFrame([
-        {"Scenario": "DCF_Lo_Growth_Lo_WACC", "Growth_Used": gL, "WACC_Used": wacc_low, "Per_Share_Value": vLp},
-        {"Scenario": "DCF_Mid_Growth_Mid_WACC","Growth_Used": gM, "WACC_Used": wacc_mid,  "Per_Share_Value": vMp},
-        {"Scenario": "DCF_Hi_Growth_Hi_WACC", "Growth_Used": gH, "WACC_Used": wacc_high,  "Per_Share_Value": vHp},
+        {"Scenario": "DCF_Lo_Growth_Lo_WACC", "Growth_Used": gL, "WACC_Used": wacc_low, "Per_Share_Value": vLp, "Assumptions_Used": assumptions_used},
+        {"Scenario": "DCF_Mid_Growth_Mid_WACC","Growth_Used": gM, "WACC_Used": wacc_mid,  "Per_Share_Value": vMp, "Assumptions_Used": assumptions_used},
+        {"Scenario": "DCF_Hi_Growth_Hi_WACC", "Growth_Used": gH, "WACC_Used": wacc_high,  "Per_Share_Value": vHp, "Assumptions_Used": assumptions_used},
     ])
 
     if as_df:
@@ -2269,12 +2309,13 @@ def dcf_implied_enterprise_value(
     ticker: str,
     *,
     years: Optional[int] = None,             # None => perpetuity-only (Gordon Growth)
-    risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.060,
-    growth: Optional[float] = None,          # if None → use FCF CAGR first, then revenue CAGR; fallback 3%
-    target_cagr_fallback: float = 0.02,
-    use_average_fcf_years: Optional[int] = 3,   # None → use ALL available FCF points
+    risk_free_rate: float = VALUATION_DEFAULTS["risk_free_rate"],
+    equity_risk_premium: float = VALUATION_DEFAULTS["equity_risk_premium"],
+    growth: Optional[float] = None,          # if None -> use FCF CAGR first, then revenue CAGR; fallback 3%
+    target_cagr_fallback: float = VALUATION_DEFAULTS["target_cagr_fallback"],
+    use_average_fcf_years: Optional[int] = VALUATION_DEFAULTS["fcf_window_years"],   # None -> use ALL available FCF points
     volatility_threshold: float = 0.5,       # coefficient of variation threshold for a volatility note
+    assumptions_as_of: Optional[str] = None,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
 ):
@@ -2299,6 +2340,13 @@ def dcf_implied_enterprise_value(
     analysis_report_date = analysis_report_date or _today_iso()
     t = _sanitize_ticker(ticker)
     snap = _pull_company_snapshot(t)
+    assumptions_used = valuation_defaults(
+        as_of_date=assumptions_as_of or analysis_report_date,
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        target_cagr_fallback=target_cagr_fallback,
+        fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
+    )
 
     # --- IMPROVED: Calculate proper WACC ---
     beta = _safe_float(snap.get("beta"))
@@ -2319,7 +2367,7 @@ def dcf_implied_enterprise_value(
         notes.append("No historical FCF points available from Yahoo.")
         df = pd.DataFrame([{
             "Ticker": t, "Avg_FCF_Used": None, "Growth_Used": None, "WACC_Used": wacc,
-            "Years": 0 if years is None else int(years), "EV_Implied": None, "Notes": " ".join(notes)
+            "Years": 0 if years is None else int(years), "EV_Implied": None, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)
         }])
         return df if as_df else to_records(df, analysis_report_date=analysis_report_date, notes=notes)
 
@@ -2348,7 +2396,7 @@ def dcf_implied_enterprise_value(
         notes.append("Average FCF not positive; EV will be None.")
         df = pd.DataFrame([{
             "Ticker": t, "Avg_FCF_Used": avg_fcf, "Growth_Used": None, "WACC_Used": wacc,
-            "Years": 0 if years is None else int(years), "EV_Implied": None, "Notes": " ".join(notes)
+            "Years": 0 if years is None else int(years), "EV_Implied": None, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)
         }])
         return df if as_df else to_records(df, analysis_report_date=analysis_report_date, notes=notes)
 
@@ -2375,7 +2423,7 @@ def dcf_implied_enterprise_value(
     capped = False
     original_g = g
     if _is_num(wacc) and g is not None and g >= wacc:
-        g = wacc - 0.005
+        g = wacc - assumptions_used["terminal_growth_gap"]
         capped = True
 
     # Additional validation for negative growth
@@ -2411,6 +2459,7 @@ def dcf_implied_enterprise_value(
         "Growth_Used": float(g) if _is_num(g) else None,
         "WACC_Used": float(wacc) if _is_num(wacc) else None,
         "Years": years_used,
+        "Assumptions_Used": assumptions_used,
         "EV_Implied": float(ev) if _is_num(ev) else None,
         "Notes": " ".join(notes)
     }])
@@ -2421,12 +2470,13 @@ def compare_to_market_ev(
     ticker: str,
     *,
     years: Optional[int] = None,             # None => perpetuity-only mode in implied EV step
-    risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.060,
+    risk_free_rate: float = VALUATION_DEFAULTS["risk_free_rate"],
+    equity_risk_premium: float = VALUATION_DEFAULTS["equity_risk_premium"],
     growth: Optional[float] = None,
-    target_cagr_fallback: float = 0.02,
-    use_average_fcf_years: int | None = 3,  
+    target_cagr_fallback: float = VALUATION_DEFAULTS["target_cagr_fallback"],
+    use_average_fcf_years: int | None = VALUATION_DEFAULTS["fcf_window_years"],
     volatility_threshold: float = 0.5,
+    assumptions_as_of: Optional[str] = None,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
 ):
@@ -2459,6 +2509,7 @@ def compare_to_market_ev(
         target_cagr_fallback=target_cagr_fallback,
         use_average_fcf_years=use_average_fcf_years,
         volatility_threshold=volatility_threshold,
+        assumptions_as_of=assumptions_as_of,
         as_df=True,
         analysis_report_date=analysis_report_date
     )
@@ -2467,7 +2518,14 @@ def compare_to_market_ev(
     avg_fcf = implied_df.loc[0, "Avg_FCF_Used"]
     g_used = implied_df.loc[0, "Growth_Used"]
     wacc_used = implied_df.loc[0, "WACC_Used"]
-    years_used = int(implied_df.loc[0, "Years"])
+    years_used = int(implied_df.loc[0, "Years"] )
+    assumptions_used = implied_df.loc[0, "Assumptions_Used"] if "Assumptions_Used" in implied_df.columns else valuation_defaults(
+        as_of_date=assumptions_as_of or analysis_report_date,
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        target_cagr_fallback=target_cagr_fallback,
+        fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
+    )
     base_notes = implied_df.loc[0, "Notes"] or ""
 
     # IMPROVED: More robust market data retrieval
@@ -2523,6 +2581,7 @@ def compare_to_market_ev(
         "Growth_Used": float(g_used) if _is_num(g_used) else None,
         "WACC_Used": float(wacc_used) if _is_num(wacc_used) else None,
         "Years": years_used,
+        "Assumptions_Used": assumptions_used,
         "Notes": " ".join([n for n in notes if n])
     }])
 
@@ -2648,12 +2707,13 @@ def compare_to_market_cap(
     ticker_or_evdf,
     *,
     years: Optional[int] = None,                  # mirrors compare_to_market_ev
-    risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.060,
+    risk_free_rate: float = VALUATION_DEFAULTS["risk_free_rate"],
+    equity_risk_premium: float = VALUATION_DEFAULTS["equity_risk_premium"],
     growth: Optional[float] = None,
-    target_cagr_fallback: float = 0.02,
-    use_average_fcf_years: int | None = 3,  
+    target_cagr_fallback: float = VALUATION_DEFAULTS["target_cagr_fallback"],
+    use_average_fcf_years: int | None = VALUATION_DEFAULTS["fcf_window_years"],
     volatility_threshold: float = 0.5,
+    assumptions_as_of: Optional[str] = None,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
 ):
@@ -2690,6 +2750,7 @@ def compare_to_market_cap(
             target_cagr_fallback=target_cagr_fallback,
             use_average_fcf_years=use_average_fcf_years,
             volatility_threshold=volatility_threshold,
+            assumptions_as_of=assumptions_as_of,
             as_df=True,
             analysis_report_date=analysis_report_date
         )
@@ -2700,6 +2761,13 @@ def compare_to_market_cap(
     g_used = ev_df.iloc[0].get("Growth_Used")
     wacc_used = ev_df.iloc[0].get("WACC_Used")
     years_used = int(ev_df.iloc[0].get("Years"))
+    assumptions_used = ev_df.iloc[0].get("Assumptions_Used") if "Assumptions_Used" in ev_df.columns else valuation_defaults(
+        as_of_date=assumptions_as_of or analysis_report_date,
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        target_cagr_fallback=target_cagr_fallback,
+        fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
+    )
     base_notes = str(ev_df.iloc[0].get("Notes") or "")
 
     # 2) Convert implied EV -> implied Equity via your existing helper
@@ -2764,6 +2832,7 @@ def compare_to_market_cap(
         "Growth_Used": float(g_used) if _is_num(g_used) else None,
         "WACC_Used": float(wacc_used) if _is_num(wacc_used) else None,
         "Years": int(years_used),
+        "Assumptions_Used": assumptions_used,
         "Notes": " ".join([n for n in notes if n]).strip()
     }])
 
@@ -2859,12 +2928,13 @@ def orchestrator_function(
     *,
     include_target_in_peers: bool = False,
     years: int = 5,
-    risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.060,
+    risk_free_rate: float = VALUATION_DEFAULTS["risk_free_rate"],
+    equity_risk_premium: float = VALUATION_DEFAULTS["equity_risk_premium"],
     growth: Optional[float] = None,
-    target_cagr_fallback: float = 0.02,
-    use_average_fcf_years: Optional[int] = 3,
+    target_cagr_fallback: float = VALUATION_DEFAULTS["target_cagr_fallback"],
+    use_average_fcf_years: Optional[int] = VALUATION_DEFAULTS["fcf_window_years"],
     volatility_threshold: float = 0.5,
+    assumptions_as_of: Optional[str] = None,
     basis: Literal["annual","ttm"] = "annual",
     save_csv: bool = False,
     output_dir: str = "output",
@@ -2966,6 +3036,7 @@ def orchestrator_function(
         target_cagr_fallback=target_cagr_fallback,
         use_average_fcf_years=use_average_fcf_years,
         volatility_threshold=volatility_threshold,
+        assumptions_as_of=assumptions_as_of,
         as_df=True,
         analysis_report_date=analysis_report_date
     )

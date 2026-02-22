@@ -274,16 +274,16 @@ def tool_plot_peer_metric_boxplot(tickers: List[str], target_ticker: str, metric
 # EV / Market Cap
 # ============================
 @app.tool(name="compare_to_market_ev", description="Compute implied EV vs observed enterpriseValue from Yahoo.")
-def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5):
-    df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None):
+    df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
 @app.tool(name="plot_ev_observed_vs_implied", description="Plot observed EV vs implied EV (expects output from compare_to_market_ev); returns PNG.")
-def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5):
+def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None):
     if ev_df_json is None:
         if not ticker:
             raise ValueError("Provide either ev_df_json OR ticker.")
-        ev_df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+        ev_df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, as_df=True)
     else:
         import pandas as pd
         ev_df = pd.DataFrame(ev_df_json)
@@ -294,23 +294,23 @@ def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Opt
     return image_items_for_png(out)
 
 @app.tool(name="compare_to_market_cap", description="Compare implied EQUITY VALUE vs observed MARKET CAP (Yahoo).")
-def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]], years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5):
+def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]], years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None):
     # Accept a ticker string OR an ev_df_json (list[dict]) from compare_to_market_ev
     import pandas as pd
     if isinstance(ticker_or_evdf, str):
-        df = vit.compare_to_market_cap(ticker_or_evdf, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+        df = vit.compare_to_market_cap(ticker_or_evdf, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, as_df=True)
     else:
         ev_df = pd.DataFrame(ticker_or_evdf)
-        df = vit.compare_to_market_cap(ev_df, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+        df = vit.compare_to_market_cap(ev_df, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
 @app.tool(name="plot_market_cap_observed_vs_implied_equity_val", description="Plot observed Market Cap vs implied Equity Value; returns PNG.")
-def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5):
+def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None):
     import pandas as pd
     if evcap_df_json is None:
         if not ticker:
             raise ValueError("Provide either evcap_df_json OR ticker.")
-        evcap_df = vit.compare_to_market_cap(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+        evcap_df = vit.compare_to_market_cap(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, as_df=True)
     else:
         evcap_df = pd.DataFrame(evcap_df_json)
     t = ticker or (evcap_df["ticker"].iloc[0] if "ticker" in evcap_df.columns else "TICKER")
@@ -323,14 +323,14 @@ def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json
 # DCF
 # ============================
 @app.tool(name="dcf_three_scenarios", description="Compute Low/Mid/High per-share DCF for a ticker.")
-def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None):
-    df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, as_df=True)
+def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None):
+    df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, assumptions_as_of=assumptions_as_of, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
 @app.tool(name="plot_dcf_scenarios_vs_price", description="Plot DCF scenarios vs current price; returns PNG.")
-def tool_plot_dcf_vs_price(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None):
+def tool_plot_dcf_vs_price(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None):
     # Build audit DF via dcf_three_scenarios and get current price snapshot
-    audit_df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, as_df=True)
+    audit_df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, assumptions_as_of=assumptions_as_of, as_df=True)
     p1d, _, _ = vit._price_snapshots(ticker)
     out = ticker_dir(ticker) / f"{ticker}_dcf_vs_price.png"
     vit.plot_dcf_scenarios_vs_price(audit_df, p1d, save_path=str(out))
