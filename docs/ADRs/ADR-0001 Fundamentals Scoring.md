@@ -1,7 +1,7 @@
 # ADR-0001: Fundamentals Scoring – MECE 4×4 Framework, Three Scoring Modes, Weighted Composite
 
 ## Status
-Proposed (Draft)
+Proposed (Draft, Not Yet Implemented in code as of 2026-02-22)
 
 ## Context
 The fundamentals scoring module is being re-engineered to ensure:
@@ -130,3 +130,4 @@ When analyzing financial-sector tickers:
 - Balanced, MECE, production-ready fundamentals framework.  
 - Risk pillar now anchors on Altman Z and Beneish M (internal sub-factors).  
 - Remaining reference model = Piotroski F-Score (see ADR-0002).  
+

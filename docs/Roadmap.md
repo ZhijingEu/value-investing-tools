@@ -5,6 +5,8 @@ _Last updated: 2025-10-09_
 This roadmap reflects the architectural direction and sequencing agreed in ADR-0001 (Fundamentals 4×4 Framework) and ADR-0002 (Piotroski F-Score Module).  
 The implementation approach is **modular and progressive** — starting with fundamentals and peer comparison, then extending to valuation, forecasting, and multi-agent integration.
 
+Status clarification (2026-02-22): this document is an aspirational roadmap. Completion criteria listed below are targets unless explicitly validated in code/tests.
+
 ---
 
 ## Phase 1 — Stabilise Defaults & Documentation

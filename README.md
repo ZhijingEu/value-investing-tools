@@ -119,6 +119,9 @@ Outputs should be treated as a consistent analytical baseline, not an investment
 
 # 5. Company Intrinsic Performance Factors
 
+> Implementation scope note (2026-02-22): The current shipped model is the existing 12-metric framework exposed by `compute_fundamentals_actuals` and `compute_fundamentals_scores`.
+> The 4x4 fundamentals redesign (Altman/Beneish integration and standalone Piotroski module) is planned in ADRs and roadmap, but not yet in the live scoring API.
+
 ## Theory
 Every company has a set of intrinsic drivers that shape its long-term value, regardless of short-term market noise. 
 
