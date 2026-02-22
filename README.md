@@ -671,7 +671,7 @@ Returns DataFrame with columns: Scenario, Growth_Used, WACC_Used, Per_Share_Valu
 - `assumptions_as_of` can be passed to valuation functions to stamp the assumptions date in outputs.
 
 **Advanced Controls for Transformational Companies**
-- `fcf_window_years=None` → Use all available FCF data (default). Set to 1-3 to limit historical window for companies with recent business model changes.
+- `fcf_window_years=3` -> Use the latest 3 years of FCF by default. Set `None` to use all available FCF history, or set `1-3` to emphasize recent periods.
 - `manual_baseline_fcf=None` → Calculate from historical data (default). Override with current run-rate FCF for rapid growth companies.
 - `manual_growth_rates=None` → Use peer/target growth logic (default). Override with [low, mid, high] custom growth rates for AI/biotech/other high-growth sectors.
 
