@@ -667,6 +667,8 @@ Returns DataFrame with columns: Scenario, Growth_Used, WACC_Used, Per_Share_Valu
 - `peer_tickers=[...]` optionally seeds growth from peer FCF CAGRs (P25/P50/P75).
 - Growth always capped at WACC − 0.5%.
 - Requires beta; missing beta → error.
+- Shared valuation defaults are exposed via `valuation_defaults(...)` for auditability.
+- `assumptions_as_of` can be passed to valuation functions to stamp the assumptions date in outputs.
 
 **Advanced Controls for Transformational Companies**
 - `fcf_window_years=None` → Use all available FCF data (default). Set to 1-3 to limit historical window for companies with recent business model changes.
