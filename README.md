@@ -378,6 +378,7 @@ You can opt-in to `include_target=True` if you want the target to be counted in 
 - **peer_comp_detail**: per-ticker snapshot for all tickers passed in (including target_ticker if present). Contains raw ratios such as pe_ratio, ps_ratio, ev_to_ebitda, plus any per-share valuation fields your build provides.
 - **peer_multiple_bands_wide**: rows = PE / PS / EV_EBITDA, cols = Min / P25 / Median / P75 / Max / Average. Computed from peers only when include_target=False; includes the target if include_target=True.
 - **peer_comp_bands**: long per-share valuation bands (e.g., PE_Min, PE_P25, etc.), computed from peers only when include_target=False.
+- **peer_quality_diagnostics**: comparability checks (coverage + dispersion warnings for size/growth/margins/leverage/risk proxies) to help assess whether the peer set is heterogeneous before trusting valuation bands.
 
 ### Compute
 ```python

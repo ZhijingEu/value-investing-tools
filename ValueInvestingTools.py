@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import json
 import math
+import warnings
 import datetime as dt
 from typing import List, Dict, Any, Optional, Tuple, Literal
 import numpy as np
@@ -1514,6 +1515,13 @@ def _pull_company_snapshot(ticker: str) -> Dict[str, Any]:
         'ebitda': info.get('ebitda'),
         'revenue': info.get('totalRevenue'),
         'earnings': info.get('netIncomeToCommon'),
+        'revenue_growth': info.get('revenueGrowth'),
+        'earnings_growth': info.get('earningsGrowth'),
+        'operating_margin': info.get('operatingMargins'),
+        'net_margin': info.get('profitMargins'),
+        'return_on_equity_info': info.get('returnOnEquity'),
+        'return_on_assets_info': info.get('returnOnAssets'),
+        'debt_to_equity_info': info.get('debtToEquity'),
         'pe_ratio': trailing_pe,  # selected/default PE (TTM unless peer_multiples overrides)
         'trailing_pe_ratio': trailing_pe,
         'forward_pe_ratio': forward_pe,
@@ -1590,9 +1598,16 @@ def peer_multiples(
         empty_bands = pd.DataFrame(columns=["Min","P25","Median","P75","Max","Average"])
         empty_long = pd.DataFrame(columns=["Scenario", "Valuation_per_Share"])
         out = {
+            "target_ticker": target_tkr,
             "multiple_basis": multiple_basis,
             "metric_basis_map": {"PE": "trailingPE", "PS": "priceToSalesTrailing12Months", "EV_EBITDA": "enterpriseToEbitda"},
             "notes": ["No peer snapshots could be fetched."],
+            "peer_quality_diagnostics": {
+                "peer_count_for_stats": 0,
+                "coverage_warn_threshold": 0.60,
+                "metrics": [],
+                "warnings": ["No peer snapshots could be fetched."],
+            },
             "peer_comp_detail": peer_comp_detail,
             "peer_multiple_bands_wide": empty_bands,
             "peer_comp_bands": empty_long,
@@ -1656,6 +1671,131 @@ def peer_multiples(
         # Exclude target from stats if present
         peer_only = peer_only[peer_only["ticker"].astype(str).str.upper() != target_tkr]
 
+    # --- (0) Peer comparability diagnostics (coverage + dispersion checks) ---
+    def _peer_quality_diagnostics(df: pd.DataFrame) -> Dict[str, Any]:
+        coverage_warn_threshold = 0.60
+        warnings: List[str] = []
+        metrics_out: List[Dict[str, Any]] = []
+
+        n_peers = int(len(df))
+        if n_peers == 0:
+            return {
+                "peer_count_for_stats": 0,
+                "coverage_warn_threshold": coverage_warn_threshold,
+                "metrics": [],
+                "warnings": ["No peers available for peer-stat diagnostics (target may have been excluded from a 1-name set)."],
+            }
+
+        work = df.copy()
+        if "ebitda" in work.columns and "revenue" in work.columns:
+            e = pd.to_numeric(work["ebitda"], errors="coerce")
+            r = pd.to_numeric(work["revenue"], errors="coerce")
+            with np.errstate(divide="ignore", invalid="ignore"):
+                work["ebitda_margin_calc"] = np.where((r > 0) & np.isfinite(e), e / r, np.nan)
+
+        metric_specs = [
+            ("market_cap", "Market Cap", "size", "ratio_p75_p25", 5.0),
+            ("revenue", "Revenue", "size", "ratio_p75_p25", 5.0),
+            ("revenue_growth", "Revenue Growth (YoY)", "growth", "iqr", 0.15),
+            ("earnings_growth", "Earnings Growth (YoY)", "growth", "iqr", 0.20),
+            ("operating_margin", "Operating Margin", "margin", "iqr", 0.10),
+            ("ebitda_margin_calc", "EBITDA Margin (calc)", "margin", "iqr", 0.12),
+            ("debt_to_equity_info", "Debt/Equity (provider)", "leverage", "iqr", 100.0),
+            ("beta", "Beta", "risk", "iqr", 0.6),
+        ]
+
+        for col, label, category, rule_type, threshold in metric_specs:
+            if col not in work.columns:
+                metrics_out.append({
+                    "metric": col,
+                    "label": label,
+                    "category": category,
+                    "n": 0,
+                    "coverage": 0.0,
+                    "status": "missing_column",
+                    "rule_type": rule_type,
+                    "threshold": threshold,
+                })
+                continue
+
+            s = pd.to_numeric(work[col], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+            n = int(len(s))
+            coverage = (n / n_peers) if n_peers > 0 else 0.0
+            row: Dict[str, Any] = {
+                "metric": col,
+                "label": label,
+                "category": category,
+                "n": n,
+                "coverage": round(float(coverage), 3),
+                "rule_type": rule_type,
+                "threshold": threshold,
+            }
+
+            if n == 0:
+                row["status"] = "no_data"
+                if coverage < coverage_warn_threshold:
+                    warnings.append(f"{label}: low coverage ({n}/{n_peers}) may weaken comparability checks.")
+                metrics_out.append(row)
+                continue
+            if n == 1:
+                row["status"] = "warn_low_coverage" if coverage < coverage_warn_threshold else "insufficient_sample"
+                row["median"] = float(s.iloc[0])
+                if coverage < coverage_warn_threshold:
+                    warnings.append(f"{label}: low coverage ({n}/{n_peers}) may weaken comparability checks.")
+                metrics_out.append(row)
+                continue
+
+            p25 = float(np.percentile(s, 25))
+            p50 = float(np.percentile(s, 50))
+            p75 = float(np.percentile(s, 75))
+            iqr = float(p75 - p25)
+            row.update({"p25": p25, "median": p50, "p75": p75, "iqr": iqr})
+
+            if rule_type == "ratio_p75_p25":
+                denom = p25 if abs(p25) > 1e-9 else np.nan
+                ratio = float(p75 / denom) if np.isfinite(denom) else None
+                row["dispersion_ratio_p75_p25"] = ratio
+                high_dispersion = bool(ratio is not None and ratio > threshold)
+            else:
+                row["dispersion_ratio_p75_p25"] = None
+                high_dispersion = bool(iqr > threshold)
+
+            low_coverage = coverage < coverage_warn_threshold
+            if low_coverage and high_dispersion:
+                row["status"] = "warn_low_coverage_and_high_dispersion"
+            elif low_coverage:
+                row["status"] = "warn_low_coverage"
+            elif high_dispersion:
+                row["status"] = "warn_high_dispersion"
+            else:
+                row["status"] = "ok"
+            metrics_out.append(row)
+
+            if low_coverage:
+                warnings.append(f"{label}: low coverage ({n}/{n_peers}) may weaken comparability checks.")
+            if high_dispersion:
+                if rule_type == "ratio_p75_p25":
+                    warnings.append(f"{label}: wide dispersion (P75/P25 > {threshold:.1f}x) suggests heterogeneous peers.")
+                else:
+                    warnings.append(f"{label}: wide dispersion (IQR > {threshold:.2f}) suggests heterogeneous peers.")
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduped = []
+        for w in warnings:
+            if w not in seen:
+                deduped.append(w)
+                seen.add(w)
+
+        return {
+            "peer_count_for_stats": n_peers,
+            "coverage_warn_threshold": coverage_warn_threshold,
+            "metrics": metrics_out,
+            "warnings": deduped,
+        }
+
+    peer_quality_diagnostics = _peer_quality_diagnostics(peer_only)
+
     # --- (1) Ratio bands (wide: PE/PS/EV_EBITDA x Min/P25/Median/P75/Max/Average) ---
     def _bands(series: pd.Series) -> Dict[str, float]:
         s = pd.to_numeric(series, errors="coerce").dropna()
@@ -1718,6 +1858,7 @@ def peer_multiples(
         "multiple_basis": multiple_basis,
         "metric_basis_map": metric_basis_map,
         "notes": notes,
+        "peer_quality_diagnostics": peer_quality_diagnostics,
         "peer_comp_detail": peer_comp_detail,           # ALL tickers as passed (incl. target if present)
         "peer_multiple_bands_wide": peer_multiple_bands_wide,  # peers only (excl target unless include_target=True)
         "peer_comp_bands": peer_comp_bands,             # peers only (per-share valuation bands)

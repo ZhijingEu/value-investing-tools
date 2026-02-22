@@ -241,6 +241,7 @@ def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: 
         "multiple_basis": res.get("multiple_basis"),
         "metric_basis_map": res.get("metric_basis_map"),
         "notes": res.get("notes"),
+        "peer_quality_diagnostics": res.get("peer_quality_diagnostics"),
         "peer_comp_detail": to_records_df(pcd),
         "peer_multiple_bands_wide": json.loads(bands_wide.to_json()),
         "peer_comp_bands": to_records_df(comp_bands)
