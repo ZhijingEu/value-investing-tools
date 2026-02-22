@@ -331,6 +331,53 @@ def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None
     df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, assumptions_as_of=assumptions_as_of, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
+@app.tool(name="dcf_sensitivity_grid", description="Build DCF sensitivity table (WACC x terminal growth) as wide + long outputs.")
+def tool_dcf_sensitivity_grid(
+    ticker: str,
+    years: int=5,
+    risk_free_rate: float=0.045,
+    equity_risk_premium: float=0.060,
+    growth: Optional[float]=None,
+    target_cagr_fallback: float=0.02,
+    use_average_fcf_years: Optional[int]=3,
+    assumptions_as_of: Optional[str]=None,
+    wacc_values: Optional[List[float]]=None,
+    growth_values: Optional[List[float]]=None,
+    save_csv: bool=False,
+):
+    res = vit.dcf_sensitivity_grid(
+        ticker,
+        years=years,
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        growth=growth,
+        target_cagr_fallback=target_cagr_fallback,
+        use_average_fcf_years=use_average_fcf_years,
+        assumptions_as_of=assumptions_as_of,
+        wacc_values=wacc_values,
+        growth_values=growth_values,
+        as_df=True,
+    )
+    grid_long = res["grid_long"]
+    grid_wide = res["grid_wide"]
+    content = [text_item(f"DCF sensitivity grid for {ticker} (rows=growth, cols=WACC)")]
+    payload = {
+        "ticker": res.get("ticker"),
+        "analysis_report_date": res.get("analysis_report_date"),
+        "inputs_used": res.get("inputs_used"),
+        "notes": res.get("notes"),
+        "grid_wide": json.loads(grid_wide.to_json()),
+        "grid_long": to_records_df(grid_long),
+    }
+    content.append(text_item(json.dumps(payload)[:120000]))
+    if save_csv:
+        base = ticker_dir(ticker)
+        uri_wide = write_df_csv(grid_wide.reset_index(), base / f"dcf_sensitivity_grid_wide_{ticker}.csv")
+        uri_long = write_df_csv(grid_long, base / f"dcf_sensitivity_grid_long_{ticker}.csv")
+        content.append(file_resource(uri_wide, "text/csv"))
+        content.append(file_resource(uri_long, "text/csv"))
+    return content
+
 @app.tool(name="plot_dcf_scenarios_vs_price", description="Plot DCF scenarios vs current price; returns PNG.")
 def tool_plot_dcf_vs_price(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None):
     # Build audit DF via dcf_three_scenarios and get current price snapshot

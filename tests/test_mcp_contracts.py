@@ -49,6 +49,31 @@ class TestMcpResponseContracts(unittest.TestCase):
         self.assertEqual(rows[0]["source"], "dcf")
         self.assertEqual(rows[0]["ticker"], "MSFT")
 
+    def test_tool_dcf_sensitivity_grid_returns_json_payload(self):
+        grid_long = pd.DataFrame(
+            [{"Growth_Input": 0.02, "WACC_Input": 0.1, "Per_Share_Value": 12.3}]
+        )
+        grid_wide = pd.DataFrame({0.1: [12.3]}, index=[0.02])
+        fake = {
+            "ticker": "MSFT",
+            "analysis_report_date": "2026-02-22",
+            "grid_long": grid_long,
+            "grid_wide": grid_wide,
+            "inputs_used": {"years": 5},
+            "notes": ["ok"],
+        }
+        with patch.object(server.vit, "dcf_sensitivity_grid", return_value=fake):
+            out = server.tool_dcf_sensitivity_grid("MSFT")
+
+        self.assertIsInstance(out, list)
+        self.assertGreaterEqual(len(out), 2)
+        self.assertEqual(out[0]["type"], "text")
+        self.assertEqual(out[1]["type"], "text")
+        payload = json.loads(out[1]["text"])
+        self.assertEqual(payload["ticker"], "MSFT")
+        self.assertIn("grid_wide", payload)
+        self.assertIn("grid_long", payload)
+
     def test_plot_scores_clustered_returns_image_resource_contract(self):
         class _DummyFig:
             def savefig(self, *_args, **_kwargs):

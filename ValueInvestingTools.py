@@ -2504,6 +2504,207 @@ def _get_total_debt_from_info(info: dict) -> Optional[float]:
     
     return total_debt if found_debt else None
 
+
+def _dcf_sensitivity_grid_from_inputs(
+    *,
+    avg_fcf: float,
+    shares_outstanding: float,
+    years: int,
+    wacc_values: List[float],
+    growth_values: List[float],
+    terminal_growth_gap: float = VALUATION_DEFAULTS["terminal_growth_gap"],
+) -> pd.DataFrame:
+    """
+    Pure helper for DCF sensitivity tables.
+
+    Returns a long-form DataFrame with one row per (growth, wacc) cell.
+    Growth is floored at -5% and capped at (wacc - terminal_growth_gap) for stability.
+    """
+    rows: List[Dict[str, Any]] = []
+
+    for g_in in growth_values:
+        for w_in in wacc_values:
+            g_used = None
+            g_floored = False
+            g_capped = False
+            ev = None
+            per_share = None
+
+            if _is_num(g_in) and _is_num(w_in) and _is_pos(avg_fcf) and _is_pos(shares_outstanding) and _is_pos(w_in):
+                g_tmp = float(g_in)
+                if g_tmp < -0.05:
+                    g_tmp = -0.05
+                    g_floored = True
+
+                cap_level = float(w_in) - float(terminal_growth_gap)
+                if g_tmp >= cap_level:
+                    g_tmp = cap_level
+                    g_capped = True
+
+                g_used = g_tmp
+                ev = _dcf_enterprise_value(float(avg_fcf), g_used, float(w_in), years=int(years))
+                per_share = (ev / float(shares_outstanding)) if _is_pos(ev) else None
+
+            rows.append({
+                "Growth_Input": float(g_in) if _is_num(g_in) else None,
+                "WACC_Input": float(w_in) if _is_num(w_in) else None,
+                "Growth_Used": float(g_used) if _is_num(g_used) else None,
+                "WACC_Used": float(w_in) if _is_num(w_in) else None,
+                "Growth_Floored": bool(g_floored),
+                "Growth_Capped": bool(g_capped),
+                "EV_Implied": float(ev) if _is_num(ev) else None,
+                "Per_Share_Value": float(per_share) if _is_num(per_share) else None,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def dcf_sensitivity_grid(
+    ticker: str,
+    *,
+    years: int = 5,
+    risk_free_rate: float = VALUATION_DEFAULTS["risk_free_rate"],
+    equity_risk_premium: float = VALUATION_DEFAULTS["equity_risk_premium"],
+    growth: Optional[float] = None,
+    target_cagr_fallback: float = VALUATION_DEFAULTS["target_cagr_fallback"],
+    use_average_fcf_years: Optional[int] = VALUATION_DEFAULTS["fcf_window_years"],
+    assumptions_as_of: Optional[str] = None,
+    wacc_values: Optional[List[float]] = None,
+    growth_values: Optional[List[float]] = None,
+    as_df: bool = True,
+    analysis_report_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Build a DCF sensitivity table (WACC x terminal growth) using the same baseline inputs
+    and guardrails as the implied-EV DCF path.
+
+    Returns a dict with:
+      - grid_long: one row per (growth, wacc) cell
+      - grid_wide: matrix of per-share values (rows=growth, cols=wacc)
+      - inputs_used: baseline assumptions and generated grids
+      - notes: explanatory warnings / selection notes
+    """
+    analysis_report_date = analysis_report_date or _today_iso()
+    t = _sanitize_ticker(ticker)
+    snap = _pull_company_snapshot(t)
+    assumptions_used = valuation_defaults(
+        as_of_date=assumptions_as_of or analysis_report_date,
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        target_cagr_fallback=target_cagr_fallback,
+        fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
+    )
+
+    notes: List[str] = []
+
+    beta = _safe_float(snap.get("beta"))
+    if beta is None:
+        raise ValueError(f"Missing beta from yfinance for {t}. Cannot compute sensitivity WACC baseline.")
+
+    base_wacc = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta)
+    if base_wacc is None:
+        base_wacc = risk_free_rate + beta * equity_risk_premium
+        notes.append("WACC baseline fell back to cost of equity due to missing debt inputs.")
+
+    fcf_series_all = _fcf_series_from_cashflow(snap.get("cashflow"))
+    if not isinstance(fcf_series_all, pd.Series) or fcf_series_all.dropna().empty:
+        raise ValueError(f"No historical FCF points available from Yahoo for {t}.")
+
+    fcf_series_all = fcf_series_all.dropna()
+    available = len(fcf_series_all)
+    n = available if use_average_fcf_years is None else max(1, min(int(use_average_fcf_years), available))
+    fcf_window = fcf_series_all.tail(n)
+    avg_fcf = _normalized_fcf_baseline(fcf_window)
+    if not _is_pos(avg_fcf):
+        raise ValueError(f"Average FCF not positive for {t}; sensitivity grid would be misleading.")
+
+    if growth is not None:
+        base_g = float(growth)
+        notes.append("Using user-provided terminal growth baseline.")
+    else:
+        fcf_cagr = _fcf_cagr_from_series(fcf_series_all)
+        rev_cagr = _revenue_cagr_from_series(snap.get("revenue_series"))
+        if _is_num(fcf_cagr) and -0.3 <= fcf_cagr <= 0.3:
+            base_g = float(fcf_cagr)
+            notes.append("Using historical FCF CAGR as terminal growth baseline.")
+        elif _is_num(rev_cagr) and -0.3 <= rev_cagr <= 0.3:
+            base_g = float(rev_cagr) * 0.8
+            notes.append("Using adjusted historical revenue CAGR as terminal growth baseline.")
+        else:
+            base_g = float(target_cagr_fallback)
+            notes.append("Using fallback terminal growth baseline.")
+
+    if growth_values is None:
+        growth_values = [base_g - 0.02, base_g - 0.01, base_g, base_g + 0.01, base_g + 0.02]
+    if wacc_values is None:
+        growth_risk_spread = [base_wacc - 0.02, base_wacc - 0.01, base_wacc, base_wacc + 0.01, base_wacc + 0.02]
+        wacc_values = [float(w) for w in growth_risk_spread if _is_pos(w)]
+
+    # Normalize and sort for stable output shape
+    wacc_values = sorted({round(float(w), 6) for w in wacc_values if _is_pos(w)})
+    growth_values = sorted({round(float(g), 6) for g in growth_values if _is_num(g)})
+    if not wacc_values or not growth_values:
+        raise ValueError("Sensitivity grid requires at least one valid WACC and growth value.")
+
+    so = _safe_float(snap.get("shares_outstanding"))
+    if not _is_pos(so):
+        raise ValueError(f"Missing shares outstanding from yfinance for {t}. Cannot compute per-share sensitivity grid.")
+
+    grid_long = _dcf_sensitivity_grid_from_inputs(
+        avg_fcf=float(avg_fcf),
+        shares_outstanding=float(so),
+        years=int(years),
+        wacc_values=wacc_values,
+        growth_values=growth_values,
+        terminal_growth_gap=assumptions_used["terminal_growth_gap"],
+    )
+
+    grid_wide = (
+        grid_long.pivot(index="Growth_Input", columns="WACC_Input", values="Per_Share_Value")
+        .sort_index(axis=0)
+        .sort_index(axis=1)
+    )
+    grid_wide.index.name = "Growth_Input"
+    grid_wide.columns.name = "WACC_Input"
+
+    # Notes on grid adjustments
+    capped_cells = int(grid_long["Growth_Capped"].sum()) if "Growth_Capped" in grid_long.columns else 0
+    floored_cells = int(grid_long["Growth_Floored"].sum()) if "Growth_Floored" in grid_long.columns else 0
+    if capped_cells:
+        notes.append(f"{capped_cells} grid cells had growth capped at WACC - {assumptions_used['terminal_growth_gap']:.1%}.")
+    if floored_cells:
+        notes.append(f"{floored_cells} grid cells had growth floored at -5.0%.")
+
+    out = {
+        "ticker": t,
+        "analysis_report_date": analysis_report_date,
+        "grid_long": grid_long,
+        "grid_wide": grid_wide,
+        "inputs_used": {
+            "years": int(years),
+            "avg_fcf_used": float(avg_fcf),
+            "shares_outstanding": float(so),
+            "base_wacc": float(base_wacc),
+            "base_growth": float(base_g),
+            "wacc_values": wacc_values,
+            "growth_values": growth_values,
+            "assumptions_used": assumptions_used,
+        },
+        "notes": notes,
+    }
+
+    if as_df:
+        return out
+
+    return {
+        "ticker": t,
+        "analysis_report_date": analysis_report_date,
+        "grid_long": to_records(grid_long, analysis_report_date=analysis_report_date),
+        "grid_wide": json.loads(grid_wide.to_json()),
+        "inputs_used": out["inputs_used"],
+        "notes": notes,
+    }
+
 def dcf_implied_enterprise_value(
     ticker: str,
     *,
