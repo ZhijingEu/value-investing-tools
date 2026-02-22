@@ -44,6 +44,33 @@ def _safe_float(x) -> Optional[float]:
     except Exception:
         return None
 
+def _equity_value_from_ev(
+    ev: Optional[float],
+    *,
+    total_debt: Optional[float] = None,
+    cash_eq: Optional[float] = None,
+    minority_interest: Optional[float] = None,
+    net_debt: Optional[float] = None,
+) -> Optional[float]:
+    """
+    Convert enterprise value to equity value.
+
+    If net_debt is provided, use: Equity = EV - NetDebt - MinorityInterest.
+    Otherwise use: Equity = EV - TotalDebt + Cash - MinorityInterest.
+    """
+    ev_f = _safe_float(ev)
+    if ev_f is None:
+        return None
+
+    mi = _safe_float(minority_interest) or 0.0
+    nd = _safe_float(net_debt)
+    if nd is not None:
+        return ev_f - nd - mi
+
+    td = _safe_float(total_debt) or 0.0
+    c = _safe_float(cash_eq) or 0.0
+    return ev_f - td + c - mi
+
 def _pct_from_info(info: dict, key: str) -> Optional[float]:
     v = _safe_float(info.get(key))
     return v  # keep as decimal, no *100
@@ -1767,7 +1794,13 @@ def price_from_peer_multiples(
         def _one(mult):
             if not _is_num(mult): return None
             ev = mult * ebitda
-            equity = ev - (net_debt or 0.0) - (mi or 0.0) + (cash_eq or 0.0)
+            equity = _equity_value_from_ev(
+                ev,
+                total_debt=total_debt,
+                cash_eq=cash_eq,
+                minority_interest=mi,
+                net_debt=net_debt,
+            )
             return equity / shares if _is_pos(shares) else None
         return (_one(ee_p25), _one(ee_med), _one(ee_p75))
 
@@ -2572,10 +2605,13 @@ def implied_equity_value_from_ev(
         notes.append("Minority Interest missing; treated as 0.")
 
     # Calculate equity value
-    if _is_num(ev_implied):
-        equity_implied = ev_implied - total_debt + cash_eq - minority
-    else:
-        equity_implied = None
+    equity_implied = _equity_value_from_ev(
+        ev_implied,
+        total_debt=total_debt,
+        cash_eq=cash_eq,
+        minority_interest=minority,
+    )
+    if not _is_num(equity_implied):
         notes.append("Cannot calculate equity value: EV_Implied is not valid.")
 
     # IMPROVED: Add per-share calculation
