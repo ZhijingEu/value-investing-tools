@@ -676,6 +676,7 @@ Returns DataFrame with columns: Scenario, Growth_Used, WACC_Used, Per_Share_Valu
 - Requires beta; missing beta → error.
 - Shared valuation defaults are exposed via `valuation_defaults(...)` for auditability.
 - `assumptions_as_of` can be passed to valuation functions to stamp the assumptions date in outputs.
+- `Assumptions_Used` payloads now include `assumptions_schema_version` and `assumptions_snapshot_id` for reproducible run-to-run comparison.
 
 **Advanced Controls for Transformational Companies**
 - `fcf_window_years=3` -> Use the latest 3 years of FCF by default. Set `None` to use all available FCF history, or set `1-3` to emphasize recent periods.

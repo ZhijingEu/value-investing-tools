@@ -194,6 +194,23 @@ VALUATION_DEFAULTS: Dict[str, float] = {
     "fcf_window_years": 3,
     "terminal_growth_gap": 0.005,  # g <= WACC - gap
 }
+VALUATION_ASSUMPTIONS_SCHEMA_VERSION = "1.0"
+
+
+def _valuation_assumptions_snapshot_id(payload: Dict[str, Any]) -> str:
+    """Deterministic fingerprint for the effective valuation assumptions payload."""
+    material = {
+        "as_of_date": str(payload.get("as_of_date")) if payload.get("as_of_date") is not None else None,
+        "risk_free_rate": _safe_float(payload.get("risk_free_rate")),
+        "equity_risk_premium": _safe_float(payload.get("equity_risk_premium")),
+        "target_cagr_fallback": _safe_float(payload.get("target_cagr_fallback")),
+        "fcf_window_years": int(payload.get("fcf_window_years")) if payload.get("fcf_window_years") is not None else None,
+        "terminal_growth_gap": _safe_float(payload.get("terminal_growth_gap")),
+        "assumptions_schema_version": payload.get("assumptions_schema_version", VALUATION_ASSUMPTIONS_SCHEMA_VERSION),
+    }
+    raw = json.dumps(material, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    return f"vit-val-{digest}"
 
 
 def valuation_defaults(
@@ -207,14 +224,18 @@ def valuation_defaults(
     """
     Return a normalized assumptions payload for valuation outputs and audits.
     """
-    return {
+    payload = {
         "as_of_date": as_of_date or _today_iso(),
         "risk_free_rate": VALUATION_DEFAULTS["risk_free_rate"] if risk_free_rate is None else float(risk_free_rate),
         "equity_risk_premium": VALUATION_DEFAULTS["equity_risk_premium"] if equity_risk_premium is None else float(equity_risk_premium),
         "target_cagr_fallback": VALUATION_DEFAULTS["target_cagr_fallback"] if target_cagr_fallback is None else float(target_cagr_fallback),
         "fcf_window_years": VALUATION_DEFAULTS["fcf_window_years"] if fcf_window_years is None else int(fcf_window_years),
         "terminal_growth_gap": VALUATION_DEFAULTS["terminal_growth_gap"],
+        "assumptions_schema_version": VALUATION_ASSUMPTIONS_SCHEMA_VERSION,
+        "assumptions_source": "ValueInvestingTools.valuation_defaults",
     }
+    payload["assumptions_snapshot_id"] = _valuation_assumptions_snapshot_id(payload)
+    return payload
 
 # ==========================================================
 # FUNDAMENTALS (actuals first; scores on demand; optional merge)
