@@ -24,6 +24,8 @@ Status labels used below:
 - `In Progress`: partially implemented.
 - `Completed`: delivered and validated with tests/docs.
 
+Status clarification (2026-02-22): this document is an aspirational roadmap. Completion criteria listed below are targets unless explicitly validated in code/tests.
+
 ---
 
 ## Phase 1 - Stabilise Defaults & Documentation
