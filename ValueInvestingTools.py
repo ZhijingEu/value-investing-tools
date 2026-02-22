@@ -6,6 +6,7 @@ import os
 import json
 import math
 import warnings
+import hashlib
 import datetime as dt
 from typing import List, Dict, Any, Optional, Tuple, Literal
 import numpy as np
@@ -71,6 +72,81 @@ def _equity_value_from_ev(
     td = _safe_float(total_debt) or 0.0
     c = _safe_float(cash_eq) or 0.0
     return ev_f - td + c - mi
+
+
+def _valuation_confidence_from_flags(
+    flags: Dict[str, Any],
+    *,
+    context: str,
+    extra_reasons: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Build a machine-readable confidence assessment for valuation outputs.
+
+    This is a confidence score for valuation *reliability/interpretability*,
+    not a confidence score for price direction or investment outcome.
+    """
+    rules = {
+        "missing_fcf_history": (0.70, "No historical FCF history available."),
+        "non_positive_fcf": (0.65, "Normalized historical FCF is non-positive."),
+        "invalid_implied_ev": (0.60, "Implied EV could not be computed from available inputs."),
+        "used_cost_of_equity_fallback": (0.18, "WACC fell back to cost of equity due to missing debt inputs."),
+        "used_fallback_growth": (0.18, "Growth relied on fallback assumption rather than company history."),
+        "used_revenue_growth_proxy": (0.08, "Growth used revenue CAGR proxy instead of FCF CAGR."),
+        "high_fcf_volatility": (0.18, "Historical FCF volatility is high."),
+        "moderate_fcf_volatility": (0.08, "Historical FCF volatility is moderate."),
+        "short_fcf_history": (0.10, "FCF history window is short."),
+        "growth_capped": (0.07, "Growth was capped by the WACC guardrail."),
+        "growth_floored": (0.05, "Growth was floored for stability."),
+        "extreme_ev_fcf_multiple": (0.08, "Implied EV/FCF multiple appears extreme."),
+        "missing_observed_ev": (0.12, "Observed enterprise value was unavailable."),
+        "observed_ev_estimated_from_market_cap": (0.06, "Observed EV was estimated from market cap + debt - cash."),
+        "missing_observed_market_cap": (0.12, "Observed market cap was unavailable."),
+        "market_cap_estimated_from_price": (0.06, "Observed market cap was estimated from shares x price."),
+        "negative_equity_implied": (0.20, "Implied equity value is negative."),
+        "missing_shares_for_per_share": (0.08, "Shares outstanding unavailable for per-share conversion."),
+    }
+
+    score = 1.0
+    reasons: List[str] = []
+    normalized_flags: Dict[str, bool] = {}
+
+    for key, value in (flags or {}).items():
+        active = bool(value)
+        normalized_flags[key] = active
+        if not active:
+            continue
+        penalty, reason = rules.get(key, (0.03, f"Flag raised: {key}"))
+        score -= penalty
+        reasons.append(reason)
+
+    if extra_reasons:
+        reasons.extend([str(r) for r in extra_reasons if str(r).strip()])
+
+    score = max(0.0, min(1.0, round(float(score), 3)))
+    if score >= 0.75:
+        level = "high"
+    elif score >= 0.45:
+        level = "medium"
+    else:
+        level = "low"
+
+    # Deduplicate reasons while preserving order
+    seen = set()
+    reasons_deduped = []
+    for r in reasons:
+        if r not in seen:
+            reasons_deduped.append(r)
+            seen.add(r)
+
+    return {
+        "schema_version": "1.0",
+        "context": context,
+        "score": score,
+        "level": level,
+        "reasons": reasons_deduped,
+        "flags": normalized_flags,
+    }
 
 def _pct_from_info(info: dict, key: str) -> Optional[float]:
     v = _safe_float(info.get(key))
@@ -2755,19 +2831,38 @@ def dcf_implied_enterprise_value(
     
     # Use the improved WACC calculation
     wacc = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta)
+    used_cost_of_equity_fallback = False
     if wacc is None:
         # Fallback to cost of equity if WACC calculation fails
         wacc = risk_free_rate + beta * equity_risk_premium
+        used_cost_of_equity_fallback = True
 
     # FCF series (Operating CF - CapEx) - using corrected calculation
     fcf_series_all = _fcf_series_from_cashflow(snap.get('cashflow'))
     notes: List[str] = []
+    confidence_flags: Dict[str, bool] = {
+        "used_cost_of_equity_fallback": used_cost_of_equity_fallback,
+        "missing_fcf_history": False,
+        "non_positive_fcf": False,
+        "used_fallback_growth": False,
+        "used_revenue_growth_proxy": False,
+        "high_fcf_volatility": False,
+        "moderate_fcf_volatility": False,
+        "short_fcf_history": False,
+        "growth_capped": False,
+        "growth_floored": False,
+        "invalid_implied_ev": False,
+        "extreme_ev_fcf_multiple": False,
+    }
 
     if not isinstance(fcf_series_all, pd.Series) or fcf_series_all.empty:
         notes.append("No historical FCF points available from Yahoo.")
+        confidence_flags["missing_fcf_history"] = True
+        confidence_flags["invalid_implied_ev"] = True
+        valuation_confidence = _valuation_confidence_from_flags(confidence_flags, context="dcf_implied_enterprise_value")
         df = pd.DataFrame([{
             "Ticker": t, "Avg_FCF_Used": None, "Growth_Used": None, "WACC_Used": wacc,
-            "Years": 0 if years is None else int(years), "EV_Implied": None, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)
+            "Years": 0 if years is None else int(years), "EV_Implied": None, "Assumptions_Used": assumptions_used, "Valuation_Confidence": valuation_confidence, "Notes": " ".join(notes)
         }])
         return df if as_df else to_records(df, analysis_report_date=analysis_report_date, notes=notes)
 
@@ -2776,6 +2871,7 @@ def dcf_implied_enterprise_value(
     available = len(fcf_series_all)
     n = available if use_average_fcf_years is None else max(1, min(use_average_fcf_years, available))
     fcf_window = fcf_series_all.tail(n)
+    confidence_flags["short_fcf_history"] = bool(len(fcf_window) < 3)
 
     # IMPROVED: Enhanced volatility analysis
     mean_f = fcf_window.mean()
@@ -2786,17 +2882,22 @@ def dcf_implied_enterprise_value(
     if _is_num(cov):
         if cov > volatility_threshold:
             notes.append(f"Historical FCF highly volatile (CoV={cov:.2f} > threshold {volatility_threshold:.2f}); consider shortening averaging window.")
+            confidence_flags["high_fcf_volatility"] = True
         elif cov > 0.3:
             notes.append(f"Historical FCF moderately volatile (CoV={cov:.2f}).")
+            confidence_flags["moderate_fcf_volatility"] = True
 
     # IMPROVED: Use normalized FCF baseline instead of simple mean
     avg_fcf = _normalized_fcf_baseline(fcf_window)
     
     if not _is_pos(avg_fcf):
         notes.append("Average FCF not positive; EV will be None.")
+        confidence_flags["non_positive_fcf"] = True
+        confidence_flags["invalid_implied_ev"] = True
+        valuation_confidence = _valuation_confidence_from_flags(confidence_flags, context="dcf_implied_enterprise_value")
         df = pd.DataFrame([{
             "Ticker": t, "Avg_FCF_Used": avg_fcf, "Growth_Used": None, "WACC_Used": wacc,
-            "Years": 0 if years is None else int(years), "EV_Implied": None, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)
+            "Years": 0 if years is None else int(years), "EV_Implied": None, "Assumptions_Used": assumptions_used, "Valuation_Confidence": valuation_confidence, "Notes": " ".join(notes)
         }])
         return df if as_df else to_records(df, analysis_report_date=analysis_report_date, notes=notes)
 
@@ -2815,9 +2916,11 @@ def dcf_implied_enterprise_value(
         elif _is_num(rev_cagr) and -0.3 <= rev_cagr <= 0.3:
             g = rev_cagr * 0.8  # Conservative adjustment
             notes.append("Using historical revenue CAGR (adjusted) for growth.")
+            confidence_flags["used_revenue_growth_proxy"] = True
         else:
             g = target_cagr_fallback
             notes.append("Using fallback growth rate.")
+            confidence_flags["used_fallback_growth"] = True
 
     # Guardrail: cap g slightly below WACC to avoid division by zero in TV
     capped = False
@@ -2830,6 +2933,7 @@ def dcf_implied_enterprise_value(
     if g is not None and g < -0.05:
         g = max(g, -0.05)  # Floor at -5%
         notes.append("Growth rate floored at -5% for stability.")
+        confidence_flags["growth_floored"] = True
 
     # Compute EV depending on mode
     if years is None:
@@ -2844,14 +2948,22 @@ def dcf_implied_enterprise_value(
 
     if capped:
         notes.append(f"Growth capped from {original_g:.1%} to {g:.1%} (WACC - 0.5%) to stabilize terminal value.")
+        confidence_flags["growth_capped"] = True
 
     # Add reasonableness checks
     if _is_pos(ev) and _is_pos(avg_fcf):
         ev_fcf_multiple = ev / avg_fcf
         if ev_fcf_multiple > 50:
             notes.append(f"Warning: EV/FCF multiple of {ev_fcf_multiple:.1f}x seems high; check assumptions.")
+            confidence_flags["extreme_ev_fcf_multiple"] = True
         elif ev_fcf_multiple < 5:
             notes.append(f"Note: EV/FCF multiple of {ev_fcf_multiple:.1f}x is relatively low.")
+            confidence_flags["extreme_ev_fcf_multiple"] = True
+
+    if not _is_pos(ev):
+        confidence_flags["invalid_implied_ev"] = True
+
+    valuation_confidence = _valuation_confidence_from_flags(confidence_flags, context="dcf_implied_enterprise_value")
 
     out = pd.DataFrame([{
         "Ticker": t,
@@ -2860,6 +2972,7 @@ def dcf_implied_enterprise_value(
         "WACC_Used": float(wacc) if _is_num(wacc) else None,
         "Years": years_used,
         "Assumptions_Used": assumptions_used,
+        "Valuation_Confidence": valuation_confidence,
         "EV_Implied": float(ev) if _is_num(ev) else None,
         "Notes": " ".join(notes)
     }])
@@ -2927,6 +3040,11 @@ def compare_to_market_ev(
         fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
     )
     base_notes = implied_df.loc[0, "Notes"] or ""
+    upstream_conf = implied_df.loc[0, "Valuation_Confidence"] if "Valuation_Confidence" in implied_df.columns else None
+    upstream_flags = dict(upstream_conf.get("flags", {})) if isinstance(upstream_conf, dict) else {}
+    confidence_flags = dict(upstream_flags)
+    confidence_flags.setdefault("missing_observed_ev", False)
+    confidence_flags.setdefault("observed_ev_estimated_from_market_cap", False)
 
     # IMPROVED: More robust market data retrieval
     try:
@@ -2943,6 +3061,7 @@ def compare_to_market_ev(
             if estimated_ev > 0:
                 observed_ev = estimated_ev
                 base_notes += " EV estimated from market cap + debt - cash."
+                confidence_flags["observed_ev_estimated_from_market_cap"] = True
                 
     except Exception as e:
         observed_ev = None
@@ -2953,6 +3072,7 @@ def compare_to_market_ev(
     if not _is_pos(observed_ev):
         notes.append("Yahoo enterpriseValue not available; comparison limited.")
         premium_pct = None
+        confidence_flags["missing_observed_ev"] = True
     else:
         if implied_ev is None or not _is_num(implied_ev) or implied_ev <= 0:
             premium_pct = None
@@ -2972,6 +3092,12 @@ def compare_to_market_ev(
             else:
                 notes.append("Observed EV modestly below DCF-implied EV (negative premium).")
 
+    valuation_confidence = _valuation_confidence_from_flags(
+        confidence_flags,
+        context="compare_to_market_ev",
+        extra_reasons=[f"Upstream DCF confidence: {upstream_conf.get('level')}" for _ in [0] if isinstance(upstream_conf, dict) and upstream_conf.get("level")],
+    )
+
     out = pd.DataFrame([{
         "Ticker": t,
         "Observed_EV": float(observed_ev) if _is_num(observed_ev) else None,
@@ -2982,6 +3108,7 @@ def compare_to_market_ev(
         "WACC_Used": float(wacc_used) if _is_num(wacc_used) else None,
         "Years": years_used,
         "Assumptions_Used": assumptions_used,
+        "Valuation_Confidence": valuation_confidence,
         "Notes": " ".join([n for n in notes if n])
     }])
 
@@ -3169,6 +3296,13 @@ def compare_to_market_cap(
         fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
     )
     base_notes = str(ev_df.iloc[0].get("Notes") or "")
+    upstream_conf = ev_df.iloc[0].get("Valuation_Confidence") if "Valuation_Confidence" in ev_df.columns else None
+    upstream_flags = dict(upstream_conf.get("flags", {})) if isinstance(upstream_conf, dict) else {}
+    confidence_flags = dict(upstream_flags)
+    confidence_flags.setdefault("missing_observed_market_cap", False)
+    confidence_flags.setdefault("market_cap_estimated_from_price", False)
+    confidence_flags.setdefault("negative_equity_implied", False)
+    confidence_flags.setdefault("missing_shares_for_per_share", False)
 
     # 2) Convert implied EV -> implied Equity via your existing helper
     eq_df = implied_equity_value_from_ev(
@@ -3201,10 +3335,14 @@ def compare_to_market_cap(
         observed_mktcap = None
         notes.append(f"Error retrieving market cap: {str(e)[:50]}.")
 
+    confidence_flags["market_cap_estimated_from_price"] = any("MarketCap estimated" in str(n) for n in notes)
+
     # 4) Premium calculation (MarketCap vs Implied Equity)
     if not (_is_num(equity_implied) and equity_implied > 0 and _is_num(observed_mktcap)):
         premium_pct = None
         notes.append("Cannot compute premium: missing or invalid Equity_Implied / MarketCap.")
+        if not _is_num(observed_mktcap):
+            confidence_flags["missing_observed_market_cap"] = True
     else:
         premium_pct = (observed_mktcap / equity_implied - 1.0) * 100.0
         # brief interpretation
@@ -3218,6 +3356,14 @@ def compare_to_market_cap(
             notes.append("Market Cap materially below Implied Equity (<-20% premium).")
         else:
             notes.append("Market Cap modestly below Implied Equity (negative premium).")
+
+    confidence_flags["negative_equity_implied"] = bool(_is_num(equity_implied) and equity_implied < 0)
+    confidence_flags["missing_shares_for_per_share"] = not _is_pos(eq_df.iloc[0].get("SharesOutstanding"))
+    valuation_confidence = _valuation_confidence_from_flags(
+        confidence_flags,
+        context="compare_to_market_cap",
+        extra_reasons=[f"Upstream EV confidence: {upstream_conf.get('level')}" for _ in [0] if isinstance(upstream_conf, dict) and upstream_conf.get("level")],
+    )
 
     out = pd.DataFrame([{
         "Ticker": t,
@@ -3233,6 +3379,7 @@ def compare_to_market_cap(
         "WACC_Used": float(wacc_used) if _is_num(wacc_used) else None,
         "Years": int(years_used),
         "Assumptions_Used": assumptions_used,
+        "Valuation_Confidence": valuation_confidence,
         "Notes": " ".join([n for n in notes if n]).strip()
     }])
 
