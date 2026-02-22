@@ -218,8 +218,8 @@ def tool_plot_scores_clustered(tickers: List[str], basis: Literal["annual","ttm"
 # Market Comparison (Price-to-X ratios)
 # ============================
 @app.tool(name="peer_multiples", description="Build peer multiples & valuation bands for a peer set (requires target_ticker).")
-def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: bool=False, analysis_report_date: Optional[str]=None):
-    res = vit.peer_multiples(tickers, target_ticker=target_ticker, include_target=include_target, as_df=True, analysis_report_date=analysis_report_date)
+def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: bool=False, multiple_basis: Literal["ttm","forward_pe"]="ttm", analysis_report_date: Optional[str]=None):
+    res = vit.peer_multiples(tickers, target_ticker=target_ticker, include_target=include_target, multiple_basis=multiple_basis, as_df=True, analysis_report_date=analysis_report_date)
     pcd = res["peer_comp_detail"]; bands_wide = res["peer_multiple_bands_wide"]; comp_bands = res["peer_comp_bands"]
     # Write CSVs
     base = ticker_dir(target_ticker)
@@ -227,7 +227,7 @@ def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: 
     uri2 = write_df_csv(bands_wide, base / f"peer_multiple_bands_wide_{target_ticker}.csv")
     uri3 = write_df_csv(comp_bands, base / f"peer_comp_bands_{target_ticker}.csv")
     # Also return a compact JSON
-    content = [text_item(f"Peer multiples for target={target_ticker} (peers={', '.join(tickers)})")]
+    content = [text_item(f"Peer multiples for target={target_ticker} (peers={', '.join(tickers)}, multiple_basis={multiple_basis})")]
     content.extend([
         file_resource(uri1, "text/csv"),
         file_resource(uri2, "text/csv"),
@@ -238,6 +238,9 @@ def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: 
     # Return the full dict structure too (as text) so it can be piped into price_from_peer_multiples if needed
     content.append(text_item(json.dumps({
         "target_ticker": res.get("target_ticker"),
+        "multiple_basis": res.get("multiple_basis"),
+        "metric_basis_map": res.get("metric_basis_map"),
+        "notes": res.get("notes"),
         "peer_comp_detail": to_records_df(pcd),
         "peer_multiple_bands_wide": json.loads(bands_wide.to_json()),
         "peer_comp_bands": to_records_df(comp_bands)
@@ -245,11 +248,11 @@ def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: 
     return content
 
 @app.tool(name="price_from_peer_multiples", description="Compute implied per-share price bands (P25/P50/P75) from peer_multiples output.")
-def tool_price_from_peer_multiples(peer_multiples_json: Optional[Dict[str, Any]]=None, tickers: Optional[List[str]]=None, target_ticker: Optional[str]=None, include_target: bool=False, analysis_report_date: Optional[str]=None, save_csv: bool=False):
+def tool_price_from_peer_multiples(peer_multiples_json: Optional[Dict[str, Any]]=None, tickers: Optional[List[str]]=None, target_ticker: Optional[str]=None, include_target: bool=False, multiple_basis: Literal["ttm","forward_pe"]="ttm", analysis_report_date: Optional[str]=None, save_csv: bool=False):
     if peer_multiples_json is None:
         if not (tickers and target_ticker):
             raise ValueError("Provide either peer_multiples_json OR (tickers + target_ticker).")
-        pm = vit.peer_multiples(tickers, target_ticker=target_ticker, include_target=include_target, as_df=True, analysis_report_date=analysis_report_date)
+        pm = vit.peer_multiples(tickers, target_ticker=target_ticker, include_target=include_target, multiple_basis=multiple_basis, as_df=True, analysis_report_date=analysis_report_date)
     else:
         pm = peer_multiples_json
     out_df = vit.price_from_peer_multiples(pm, ticker=target_ticker, analysis_report_date=analysis_report_date, save_csv=False, as_df=True)
@@ -261,9 +264,9 @@ def tool_price_from_peer_multiples(peer_multiples_json: Optional[Dict[str, Any]]
     return content
 
 @app.tool(name="plot_peer_metric_boxplot", description="Boxplot of peer metric (PE|PS|EV_EBITDA) with target overlay; returns PNG.")
-def tool_plot_peer_metric_boxplot(tickers: List[str], target_ticker: str, metric: Literal["PE","PS","EV_EBITDA"]="PE", include_target_in_stats: bool=False):
+def tool_plot_peer_metric_boxplot(tickers: List[str], target_ticker: str, metric: Literal["PE","PS","EV_EBITDA"]="PE", include_target_in_stats: bool=False, multiple_basis: Literal["ttm","forward_pe"]="ttm"):
     peers_all = sorted({target_ticker.upper(), *(t.upper() for t in tickers)})
-    pm = vit.peer_multiples(peers_all, target_ticker=target_ticker, include_target=include_target_in_stats, as_df=True)
+    pm = vit.peer_multiples(peers_all, target_ticker=target_ticker, include_target=include_target_in_stats, multiple_basis=multiple_basis, as_df=True)
     pcd = pm["peer_comp_detail"]; bands = pm["peer_multiple_bands_wide"]
     out = ticker_dir(target_ticker) / f"peer_{metric}_box.png"
     vit.plot_peer_metric_boxplot(peer_comp_detail=pcd, peer_multiple_bands_wide=bands, metric=metric, target_ticker=target_ticker, include_target_in_stats=include_target_in_stats, save_path=str(out))

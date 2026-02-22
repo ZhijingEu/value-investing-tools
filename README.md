@@ -365,10 +365,11 @@ When selecting peers, consider:
 While peer selection is outside the scope of this library, the analyst must exercise judgment to ensure apples-to-apples comparison.
 
 ### Options & defaults
-**Function**: `peer_multiples(tickers: list[str], *, target_ticker: str, include_target: bool = False, as_df: bool = True) -> dict[str, Any]`
+**Function**: `peer_multiples(tickers: list[str], *, target_ticker: str, include_target: bool = False, multiple_basis: str = "ttm", as_df: bool = True) -> dict[str, Any]`
 
 - **target_ticker**: ticker of the company being benchmarked.
 - **tickers**: list of peer tickers.
+- **multiple_basis**: `"ttm"` (default) or `"forward_pe"` (uses Yahoo `forwardPE` when available for PE; PS and EV/EBITDA remain trailing and the output echoes this in metadata).
 
 You can opt-in to `include_target=True` if you want the target to be counted in the peer stats (not generally recommended for valuation comparability).
 

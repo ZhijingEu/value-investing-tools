@@ -1502,6 +1502,8 @@ def _peer_usability_reasons(row: pd.Series) -> List[str]:
 def _pull_company_snapshot(ticker: str) -> Dict[str, Any]:
     s = yf.Ticker(ticker)
     info = s.info
+    trailing_pe = info.get('trailingPE')
+    forward_pe = info.get('forwardPE')
     return {
         'ticker': ticker,
         'revenue_series': s.financials.loc['Total Revenue'].dropna() if 'Total Revenue' in s.financials.index else pd.Series(dtype=float),
@@ -1512,7 +1514,9 @@ def _pull_company_snapshot(ticker: str) -> Dict[str, Any]:
         'ebitda': info.get('ebitda'),
         'revenue': info.get('totalRevenue'),
         'earnings': info.get('netIncomeToCommon'),
-        'pe_ratio': info.get('trailingPE'),
+        'pe_ratio': trailing_pe,  # selected/default PE (TTM unless peer_multiples overrides)
+        'trailing_pe_ratio': trailing_pe,
+        'forward_pe_ratio': forward_pe,
         'ps_ratio': info.get('priceToSalesTrailing12Months'),
         'ev_to_ebitda': info.get('enterpriseToEbitda'),
         'current_price': info.get('currentPrice'),
@@ -1524,6 +1528,7 @@ def peer_multiples(
     *,
     target_ticker: Optional[str] = None,
     include_target: bool = False,
+    multiple_basis: Literal["ttm", "forward_pe"] = "ttm",
     as_df: bool = True,
     analysis_report_date: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1539,6 +1544,11 @@ def peer_multiples(
       If include_target=False (default), the target is EXCLUDED from those stats.
       If include_target=True and target is not inside `tickers`, we append it to
       the peer set for stats.
+
+    multiple_basis:
+      - "ttm" (default): PE/PS/EV_EBITDA use trailing Yahoo ratios.
+      - "forward_pe": PE uses Yahoo `forwardPE` where available and falls back to trailing PE.
+        PS and EV/EBITDA remain trailing because forward values are not consistently available.
 
     Returns
     -------
@@ -1580,11 +1590,56 @@ def peer_multiples(
         empty_bands = pd.DataFrame(columns=["Min","P25","Median","P75","Max","Average"])
         empty_long = pd.DataFrame(columns=["Scenario", "Valuation_per_Share"])
         out = {
+            "multiple_basis": multiple_basis,
+            "metric_basis_map": {"PE": "trailingPE", "PS": "priceToSalesTrailing12Months", "EV_EBITDA": "enterpriseToEbitda"},
+            "notes": ["No peer snapshots could be fetched."],
             "peer_comp_detail": peer_comp_detail,
             "peer_multiple_bands_wide": empty_bands,
             "peer_comp_bands": empty_long,
         }
         return out if as_df else out  # your to_records wrapper if you use one
+
+    # --- Apply optional basis selection (Sprint 2 foundation) ---
+    notes: List[str] = []
+    metric_basis_map = {
+        "PE": "trailingPE",
+        "PS": "priceToSalesTrailing12Months",
+        "EV_EBITDA": "enterpriseToEbitda",
+    }
+
+    if "trailing_pe_ratio" not in peer_comp_detail.columns:
+        peer_comp_detail["trailing_pe_ratio"] = peer_comp_detail.get("pe_ratio")
+    if "forward_pe_ratio" not in peer_comp_detail.columns:
+        peer_comp_detail["forward_pe_ratio"] = np.nan
+
+    if multiple_basis == "forward_pe":
+        selected_pe = []
+        selected_basis = []
+        forward_used = 0
+        for _, row in peer_comp_detail.iterrows():
+            fpe = row.get("forward_pe_ratio")
+            tpe = row.get("trailing_pe_ratio")
+            if _is_num(fpe):
+                selected_pe.append(float(fpe))
+                selected_basis.append("forwardPE")
+                forward_used += 1
+            elif _is_num(tpe):
+                selected_pe.append(float(tpe))
+                selected_basis.append("trailingPE_fallback")
+            else:
+                selected_pe.append(np.nan)
+                selected_basis.append(None)
+        peer_comp_detail["pe_ratio"] = selected_pe
+        peer_comp_detail["pe_ratio_basis"] = selected_basis
+        metric_basis_map["PE"] = "forwardPE (fallback: trailingPE)"
+
+        total_rows = len(peer_comp_detail)
+        notes.append(f"PE basis mode 'forward_pe': used forwardPE for {forward_used}/{total_rows} rows; fallback to trailingPE when missing.")
+        notes.append("PS and EV/EBITDA remain trailing metrics in this mode (Yahoo forward coverage is inconsistent).")
+    else:
+        # Preserve historical behavior and annotate basis for transparency
+        peer_comp_detail["pe_ratio"] = peer_comp_detail["trailing_pe_ratio"]
+        peer_comp_detail["pe_ratio_basis"] = "trailingPE"
 
     # --- Build the 'peer-only' Calc DF for stats/bands ---
     peer_only = peer_comp_detail.copy()
@@ -1660,6 +1715,9 @@ def peer_multiples(
 
     out = {
         "target_ticker": target_tkr,
+        "multiple_basis": multiple_basis,
+        "metric_basis_map": metric_basis_map,
+        "notes": notes,
         "peer_comp_detail": peer_comp_detail,           # ALL tickers as passed (incl. target if present)
         "peer_multiple_bands_wide": peer_multiple_bands_wide,  # peers only (excl target unless include_target=True)
         "peer_comp_bands": peer_comp_bands,             # peers only (per-share valuation bands)
