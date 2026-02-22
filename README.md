@@ -1006,8 +1006,14 @@ Planned improvements for future revisions include:
 ## Contributing
 Contributions are welcome!
 - Fork the repo, create a feature branch, and submit a pull request.
-- Please align code style with existing modules and include basic pytest coverage.
+- Please align code style with existing modules and include basic automated test coverage (`unittest` or `pytest`).
 - Suggestions for new metrics, visualization types, or health checks are especially appreciated.
+
+### Local validation commands
+```bash
+python -m py_compile server.py ValueInvestingTools.py vit/__init__.py
+python -m unittest discover -s tests -p "test_*.py" -v
+```
 
 # 14. License
 This project is licensed under the MIT License – you are free to use, modify, and distribute it, provided that the original copyright notice and this permission notice are included in all copies or substantial portions of the software.
