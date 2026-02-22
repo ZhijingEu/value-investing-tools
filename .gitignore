@@ -25,6 +25,7 @@ env/
 .idea/
 .DS_Store
 Thumbs.db
+.tmp/
 
 # --- local configs / secrets (examples) ---
 *.env
