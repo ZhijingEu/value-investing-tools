@@ -3,6 +3,8 @@ Value Investing Tools VIT is a Python library and MCP server for Claude that sup
 
 Important Disclosure - This code was co-developed with review and refactoring support of ChatGPT-5 and Claude Sonnet-4
 
+Project direction and scope guardrails (North Star): `docs/NORTH_STAR.md`
+
 ## Table of Contents
 1. [Why this exists](#1-why-this-exists)
 2. [How to use this library](#2-how-to-use-this-library)
@@ -1002,6 +1004,7 @@ Use this when you need a full audit trail in one call. Ideal for:
 
 ## Roadmap
 Planned improvements for future revisions include:
+- Project scope and positioning guardrails are defined in `docs/NORTH_STAR.md` (use this before proposing major new features).
 - Extended health diagnostics (coverage scoring, sector-specific caveats).
 - Optional alternative data sources beyond Yahoo Finance.
 - Richer visualization (heatmaps for sensitivity grids, factor-radar plots).

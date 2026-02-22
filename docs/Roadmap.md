@@ -4,6 +4,7 @@ _Last updated: 2026-02-22_
 
 This roadmap tracks target architecture from ADR-0001 through ADR-0006.
 It is a planning document, not a completion log.
+Product positioning and scope guardrails live in `docs/NORTH_STAR.md`.
 
 ## Current Implementation Snapshot
 

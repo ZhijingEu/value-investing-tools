@@ -4,9 +4,10 @@
 - `ValueInvestingTools.py`: main analytics library (fundamentals, peer multiples, EV/DCF, plotting helpers).
 - `server.py`: MCP stdio server exposing library functions as tools.
 - `vit/__init__.py`: import wrapper that re-exports the active `ValueInvestingTools` module.
-- `docs/`: roadmap, developer notes, and ADRs (`docs/ADRs/*.md`) describing architecture decisions.
+- `providers/`: provider adapter scaffolding (`base.py`, `yahoo.py`) for future data-source abstraction.
+- `docs/`: roadmap, developer notes, ADRs (`docs/ADRs/*.md`), and `docs/NORTH_STAR.md` (product positioning / scope guardrails).
 - `output/`: generated charts/CSVs (gitignored artifacts).
-- No first-party `tests/` directory exists yet; add one at repo root for new coverage.
+- `tests/`: `unittest`-based regression and contract checks.
 
 ## Build, Test, and Development Commands
 - Create isolated env (preferred for all testing/improvements):
@@ -24,7 +25,8 @@
 - Prefer small, focused helpers over adding more monolithic logic blocks.
 
 ## Testing Guidelines
-- Framework target: `pytest` (not yet configured in-repo).
+- Current baseline uses `unittest` (`python -m unittest discover -s tests -p "test_*.py" -v`).
+- `pytest` is acceptable for future additions, but keep CI commands and docs aligned.
 - New tests should live under `tests/` and follow `test_*.py` naming.
 - Prioritize deterministic unit tests around scoring logic, schema contracts, and tool I/O shaping.
 - If network data is required, isolate with fixtures/mocks where possible and include smoke tests separately.
