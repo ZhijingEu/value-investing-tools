@@ -3473,30 +3473,60 @@ def plot_scores_clustered(
 
     long_df["__fam_idx__"], long_df["__within_idx__"] = zip(*long_df["Metric"].map(metric_rank_key))
 
+    # Accept legacy aliases from older callers while keeping the public contract stable.
+    if sort_by == "metric":
+        sort_by = "name"
+    elif sort_by == "ticker":
+        sort_by = "name"
+
     # Decide final order
     if sort_by == "family":
         # Primary: family order; Secondary: within-family order; Tertiary: metric label as fallback
         long_df = long_df.sort_values(["__fam_idx__", "__within_idx__", "MetricLabel"])
-    elif sort_by == "metric":
+        ordered_labels = (
+            long_df
+            .drop_duplicates(subset=["Metric", "MetricLabel"])
+            .sort_values(["__fam_idx__", "__within_idx__", "MetricLabel"])["MetricLabel"]
+            .tolist()
+        )
+    elif sort_by == "name":
         long_df = long_df.sort_values(["MetricLabel"])
-    elif sort_by == "ticker":
-        long_df = long_df.sort_values(["ticker", "MetricLabel"])
+        ordered_labels = (
+            long_df
+            .drop_duplicates(subset=["Metric", "MetricLabel"])
+            .sort_values(["MetricLabel"])["MetricLabel"]
+            .tolist()
+        )
     elif sort_by == "avg":
         # Compute metric means and order by descending average
         means = long_df.groupby("Metric", observed=False)["Score"].mean().sort_values(ascending=False)
         long_df["__avg_order__"] = long_df["Metric"].map(means.to_dict())
         long_df = long_df.sort_values(["__avg_order__", "MetricLabel"])
+        ordered_labels = (
+            long_df
+            .drop_duplicates(subset=["Metric", "MetricLabel"])
+            .sort_values(["__avg_order__", "MetricLabel"])["MetricLabel"]
+            .tolist()
+        )
+    elif sort_by == "none":
+        # Preserve caller metric order, useful for deterministic report templates.
+        metric_to_label = (
+            long_df.drop_duplicates(subset=["Metric", "MetricLabel"])
+            .set_index("Metric")["MetricLabel"]
+            .to_dict()
+        )
+        ordered_labels = [metric_to_label[m] for m in selected_cols if m in metric_to_label]
     else:
         # default to family if unknown
         long_df = long_df.sort_values(["__fam_idx__", "__within_idx__", "MetricLabel"])
+        ordered_labels = (
+            long_df
+            .drop_duplicates(subset=["Metric", "MetricLabel"])
+            .sort_values(["__fam_idx__", "__within_idx__", "MetricLabel"])["MetricLabel"]
+            .tolist()
+        )
 
     # Lock x-axis order via an ordered Categorical on MetricLabel
-    ordered_labels = (
-        long_df
-        .drop_duplicates(subset=["Metric","MetricLabel"])
-        .sort_values(["__fam_idx__", "__within_idx__", "MetricLabel"])["MetricLabel"]
-        .tolist()
-    )
     long_df["MetricLabel"] = pd.Categorical(long_df["MetricLabel"], categories=ordered_labels, ordered=True)
 
     # 5) Pivot to rows=MetricLabel, cols=ticker
