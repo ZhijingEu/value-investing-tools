@@ -1,5 +1,5 @@
 # ValueInvestingTools
-Value Investing Tools VIT is a Python library and MCP server for Claude that supports value investing principles based fundamental equity analysis: fetch and summarize financial data, benchmark against peers, run DCF valuations with scenarios, estimate Enterprise Value and Equity Value, and save charts/CSVs for reproducible workflows.
+Value Investing Tools VIT is a Python library and STDIO MCP server that supports value investing principles based fundamental equity analysis: fetch and summarize financial data, benchmark against peers, run DCF valuations with scenarios, estimate Enterprise Value and Equity Value, and save charts/CSVs for reproducible workflows.
 
 Important Disclosure - This code was co-developed with review and refactoring support of ChatGPT-5 and Claude Sonnet-4
 
@@ -9,6 +9,7 @@ Project direction and scope guardrails (North Star): `docs/NORTH_STAR.md`
 1. [Why this exists](#1-why-this-exists)
 2. [How to use this library](#2-how-to-use-this-library)
 3. [Installation](#3-installation)
+   - [MCP Server (STDIO) Quick Start](#31-mcp-server-stdio-quick-start)
 4. [Data conventions & assumptions](#4-data-conventions--assumptions)
 5. [Company Intrinsic Performance Factors](#5-company-intrinsic-performance-factors)
 6. [Multi-company Comparative Fundamentals](#6-multi-company-comparative-fundamentals)
@@ -26,7 +27,7 @@ ValueInvestingTools (VIT) is a Python library for fundamental equity analysis th
 
 VIT fetches statements, builds clean data sets, and runs DCF and peer-multiple valuations with ready-to-plot outputs. 
 
-This repo also ships an MCP server so Claude Desktop can call VIT functions as tools to perform calculations, generate charts & artifacts and saves outputs for reproducible workflows (Note that there is a separate readme within this repo for the MCP Server Refer to the **MCP Server Setup Guide** → [VIT-MCP_Server_SetUp_README.md](https://github.com/ZhijingEu/value-investing-tools/blob/main/VIT-MCP_Server_SetUp_README.md)
+This repo also ships an MCP server so STDIO-capable LLM clients can call VIT functions as tools to perform calculations, generate charts & artifacts and saves outputs for reproducible workflows (Note that there is a separate readme within this repo for the MCP Server Refer to the **MCP Server Setup Guide** -> [VIT-MCP_Server_SetUp_README.md](https://github.com/ZhijingEu/value-investing-tools/blob/main/VIT-MCP_Server_SetUp_README.md)
 
 Most free data sources (e.g., Yahoo Finance) provide quick snapshots, but they:
 - Mix TTM and point-in-time values inconsistently.
@@ -42,18 +43,35 @@ ValueInvestingTools addresses these gaps by:
 # 2. How to use this library
 This toolkit follows a stepwise workflow that mirrors how analysts typically think about a company:
 
-1. Company snapshot → look at TTM vs historical averages.
-2. Peer group comparisons → put one company's numbers in context.
-3. Scoring fundamentals (0–5) → normalize metrics to directly compare across firms.
-4. Visualize → explore results with clustered bars, boxplots, and time-series plots.
-5. Drill down → inspect trends in a single metric for a single company.
-6. Extend into valuation → move beyond raw fundamentals:
+1. Company snapshot -> look at TTM vs historical averages.
+2. Peer group comparisons -> put one company's numbers in context.
+3. Scoring fundamentals (0-5) -> normalize metrics to directly compare across firms.
+4. Visualize -> explore results with clustered bars, boxplots, and time-series plots.
+5. Drill down -> inspect trends in a single metric for a single company.
+6. Extend into valuation -> move beyond raw fundamentals:
    - 6.1 Benchmark valuation multiples (PE, PS, EV/EBITDA) against peers.
    - 6.2 Run DCF scenarios (Low/Mid/High) using perpetuity growth methods.
    - 6.3 Estimate implied Enterprise Value from historical growth + FCF.
-   - 6.4 Translate EV → Equity → per-share value to see if the market looks rich or cheap.
+   - 6.4 Translate EV -> Equity -> per-share value to see if the market looks rich or cheap.
+   - 6.5 Stress-test key assumptions with WACC x terminal growth sensitivity grids.
 
 This flow reflects how the library is organized: start with intrinsic factors, add comparative context, then use valuation models to connect fundamentals to price.
+
+## 2.1 Data Providers & Extensibility
+The current default data source is Yahoo Finance via `yfinance`. A provider abstraction exists in `providers/` to support future backends (e.g., Financial Modeling Prep) while keeping the analytics layer stable.
+
+- Default provider: Yahoo Finance (`providers/yahoo.py`).
+- Future providers: additional APIs can be wired via `providers/base.py` without changing public function signatures.
+- Roadmap: see `docs/Roadmap.md` for the provider expansion plan and FMP exploration note.
+
+## 2.2 MCP Usage (STDIO)
+The MCP server exposes the same library functions over STDIO so compatible clients can orchestrate workflows.
+
+- Quick start: `python server.py`
+- Detailed setup: `VIT-MCP_Server_SetUp_README.md`
+
+### MCP Client Compatibility
+Any STDIO-capable MCP client can use this server. The setup guide includes configuration examples and notes for different clients. For client-specific MCP configuration details, refer to the official OpenAI or Anthropic documentation for the client you are using.
 
 # 3. Installation & Quick Start
 ```bash
@@ -75,7 +93,7 @@ print(summary)
 tickers = ["MSFT", "AAPL", "GOOG"]
 actuals = vit.compute_fundamentals_actuals(tickers, basis="annual")
 
-# 3) Scored fundamentals (0–5 per metric, with factor rollups and total)
+# 3) Scored fundamentals (0-5 per metric, with factor rollups and total)
 scores = vit.compute_fundamentals_scores(actuals, basis="annual")
 
 # 4) Visualize: clustered scores across tickers
@@ -85,28 +103,31 @@ vit.plot_scores_clustered(scores, basis="annual", include_total=True)
 vit.plot_single_metric_ts("MSFT", "ROE", family="Profitability", basis="annual")
 ```
 
+## 3.1 MCP Server (STDIO) Quick Start
+The MCP server exposes the same library functions as tool calls over STDIO so compatible clients can orchestrate workflows. For setup instructions, refer to `VIT-MCP_Server_SetUp_README.md`.
+
 # 4. Data conventions & assumptions
 
 ## Conventions
 
 - **Units**: Ratios, margins, and growth rates are decimals (0.18 = 18%). Format as % only for display.
 - **Basis switch & suffixing**:
-  - `basis="annual"` → multi-year averages, public labels end in `-Ave`.
-  - `basis="ttm"` → trailing twelve months, labels end in `-TTM`.
+  - `basis="annual"` -> multi-year averages, public labels end in `-Ave`.
+  - `basis="ttm"` -> trailing twelve months, labels end in `-TTM`.
 - **Special cases**:
   - CAGRs (revenue, earnings) are always annual, since multi-year growth cannot be defined on a TTM basis.
   - PEG and Beta are always snapshot (TTM), regardless of basis flag.
-- **Scoring**: 0–5 where 5 = favorable/strong/safer.
+- **Scoring**: 0-5 where 5 = favorable/strong/safer.
 - **Outputs**: DataFrames by default; use `as_df=False` for JSON-friendly dicts.
 - **CSV persistence**: Opt-in with `save_csv=True` (default is no files).
 
 ## Assumptions & Data Sources
 
 - **Source**: Yahoo Finance (via yfinance Python library).
-- **Range**: 3–5 most recent fiscal years plus TTM where relevant.
+- **Range**: 3-5 most recent fiscal years plus TTM where relevant.
 - **Statements**: Income statement, balance sheet, cash flow.
 - **Estimates**: PEG ratio uses forward EPS growth from Refinitiv (via Yahoo).
-- **Peer-normalization**: Not applied in scoring – all cutoffs are absolute, not relative.
+- **Peer-normalization**: Not applied in scoring - all cutoffs are absolute, not relative.
 - **Growth Rate Methodology** assumes FCF-First Approach where growth assumptions prioritize Free Cash Flow CAGR over revenue CAGR when calculating terminal values to reflect that shareholder value derives from cash generation, not revenue expansion. Revenue growth that requires proportional increases in capital expenditure or working capital provides less value than efficient cash conversion. (More info within Section 9)
 
 ## Interpretation caveats
@@ -130,10 +151,10 @@ Every company has a set of intrinsic drivers that shape its long-term value, reg
 While there are other predictive scoring systems like F-Score or Z-Score, VIT provides a heuristic/diagnostic framework that helps to structure the comparison between the financial performance of companies along the lens of four key drivers with transparent thresholds.
 
 These drivers fall into four broad categories:
-- **Profitability** – efficiency in generating returns on capital and margins.
-- **Growth** – ability to scale revenues and earnings over time.
-- **Reinvestment** – discipline and capacity to reinvest earnings to compound value.
-- **Risk** – balance sheet strength and exposure to volatility.
+- **Profitability** - efficiency in generating returns on capital and margins.
+- **Growth** - ability to scale revenues and earnings over time.
+- **Reinvestment** - discipline and capacity to reinvest earnings to compound value.
+- **Risk** - balance sheet strength and exposure to volatility.
 
 By scoring these factors consistently across companies and time, this creates a deterministic baseline of financial quality that can be compared across industries and cycles.
 
@@ -168,37 +189,37 @@ Unlike relative rankings (z-scores), this framework uses absolute thresholds so 
 
 | Metric | Direction | t1 | t2 | t3 | t4 |
 |--------|-----------|----|----|----|----|
-| ROE | ↑ | 0.05 | 0.10 | 0.15 | 0.20 |
-| Net Margin | ↑ | 0.05 | 0.10 | 0.15 | 0.20 |
-| Operating Margin | ↑ | 0.05 | 0.10 | 0.15 | 0.20 |
-| ROA | ↑ | 0.03 | 0.06 | 0.10 | 0.15 |
-| Revenue CAGR | ↑ | 0.00 | 0.05 | 0.10 | 0.15 |
-| Earnings CAGR | ↑ | 0.00 | 0.05 | 0.10 | 0.15 |
-| PEG Ratio | ↓ | 3.00 | 2.00 | 1.50 | 1.00 |
-| Reinvestment Rate | ↑ | 0.10 | 0.25 | 0.50 | 0.75 |
-| Capex Ratio | ↓ | 0.10 | 0.05 | 0.02 | 0.00 |
-| Debt/Equity | ↓ | 2.00 | 1.50 | 1.00 | 0.50 |
-| Beta | ↓ | 2.00 | 1.50 | 1.20 | 0.80 |
-| Current Ratio | ↑ | 0.80 | 1.00 | 1.50 | 2.00 |
+| ROE | up | 0.05 | 0.10 | 0.15 | 0.20 |
+| Net Margin | up | 0.05 | 0.10 | 0.15 | 0.20 |
+| Operating Margin | up | 0.05 | 0.10 | 0.15 | 0.20 |
+| ROA | up | 0.03 | 0.06 | 0.10 | 0.15 |
+| Revenue CAGR | up | 0.00 | 0.05 | 0.10 | 0.15 |
+| Earnings CAGR | up | 0.00 | 0.05 | 0.10 | 0.15 |
+| PEG Ratio | down | 3.00 | 2.00 | 1.50 | 1.00 |
+| Reinvestment Rate | up | 0.10 | 0.25 | 0.50 | 0.75 |
+| Capex Ratio | down | 0.10 | 0.05 | 0.02 | 0.00 |
+| Debt/Equity | down | 2.00 | 1.50 | 1.00 | 0.50 |
+| Beta | down | 2.00 | 1.50 | 1.20 | 0.80 |
+| Current Ratio | up | 0.80 | 1.00 | 1.50 | 2.00 |
 
 ## Interpretation
 - Crossing a threshold increases the score by 1.
-- Example (higher-is-better): ROE of 12% → score of 3.
-- Example (lower-is-better): Beta of 1.3 → score of 3.
+- Example (higher-is-better): ROE of 12% -> score of 3.
+- Example (lower-is-better): Beta of 1.3 -> score of 3.
 
 ### Recommendation Logic
 The total score and factor breakdown can be mapped into diagnostic categories:
-- **Elite Performer (≥18, all factor scores ≥4)** – broad-based strength across profitability, growth, reinvestment, and risk.
-- **Resilient Core (14–16.9)** – strong fundamentals with minor weaknesses.
-- **Uneven Fundamentals (11–13.9)** – patchy performance; some strengths offset by critical weaknesses.
-- **Weak Fundamentals (<11)** – structural fragility.
+- **Elite Performer (>=18, all factor scores >=4)** - broad-based strength across profitability, growth, reinvestment, and risk.
+- **Resilient Core (14-16.9)** - strong fundamentals with minor weaknesses.
+- **Uneven Fundamentals (11-13.9)** - patchy performance; some strengths offset by critical weaknesses.
+- **Weak Fundamentals (<11)**  structural fragility.
 
 ### Guardrails
-- Any factor score = 1 → flagged as a critical weakness.
-- Risk score <2.5 → flagged regardless of total score.
-- Reinvestment score <2.0 → flagged as unsustainable.
-- Excessive imbalance between factors (high dispersion) → flagged.
-- Data completeness <75% → flagged.
+- Any factor score = 1 -> flagged as a critical weakness.
+- Risk score <2.5 -> flagged regardless of total score.
+- Reinvestment score <2.0 -> flagged as unsustainable.
+- Excessive imbalance between factors (high dispersion) -> flagged.
+- Data completeness <75% -> flagged.
 
 ## Options & defaults
 **Function**: `compute_fundamentals_actuals(tickers, basis="annual", save_csv=False, as_df=True)`
@@ -221,7 +242,7 @@ import ValueInvestingTools as vit
 df = vit.compute_fundamentals_actuals(["MSFT"], basis="annual")
 print(df.T)
 
-# Scores (0–5) and factor rollups
+# Scores (0-5) and factor rollups
 scores = vit.compute_fundamentals_scores(df, basis="annual", merge_with_actuals=False)
 print(scores.filter(regex="^score_|_score$").T)
 
@@ -255,9 +276,9 @@ vit.plot_scores_clustered(
 ## Interpretation Guide
 The outputs are scored tables and visuals. Here's how to read them:
 
-**Metric-level scores (0–5)**:
-- Example: ROE = 12% → Score = 3 (solid but not elite).
-- Example: Beta = 1.3 → Score = 3 (moderate volatility).
+**Metric-level scores (0-5)**:
+- Example: ROE = 12% -> Score = 3 (solid but not elite).
+- Example: Beta = 1.3 -> Score = 3 (moderate volatility).
 
 **Factor rollups**:
 - Profitability score = average of ROE, margins, ROA.
@@ -266,17 +287,17 @@ The outputs are scored tables and visuals. Here's how to read them:
 - Risk score = debt/equity, beta, current ratio.
 
 **Total score (out of 20)**:
-- MSFT: Profitability 4.0 + Growth 3.0 + Reinvestment 3.5 + Risk 4.0 = 14.5 → "Resilient Core."
+- MSFT: Profitability 4.0 + Growth 3.0 + Reinvestment 3.5 + Risk 4.0 = 14.5 -> "Resilient Core."
 
 **Visuals**:
 - Clustered bar charts: highlight relative strengths within one company across factors.
 - Time series: show whether fundamentals are improving or deteriorating.
 
 **Key point**: High total score is positive, but interpretation depends on context.
-- A company may score high on growth but low on risk → more volatile.
-- Another may score high on profitability but low on reinvestment → mature, less compounding ahead.
+- A company may score high on growth but low on risk -> more volatile.
+- Another may score high on profitability but low on reinvestment -> mature, less compounding ahead.
 
-While this example uses one company (MSFT), the same framework extends seamlessly to peer-group comparisons – making it easy to spot whether one company's strengths and weaknesses stand out against competitors.
+While this example uses one company (MSFT), the same framework extends seamlessly to peer-group comparisons - making it easy to spot whether one company's strengths and weaknesses stand out against competitors.
 
 # 6. Multi-company Comparative Fundamentals
 
@@ -333,13 +354,13 @@ vit.plot_scores_clustered(
 ## Interpretation Guide
 When comparing multiple companies:
 - **Absolute metrics** (e.g., ROE, margins, debt ratios) reveal who performs best in raw terms.
-- **Scored metrics** standardize the values on a 0–5 scale, making it easy to see outliers at a glance.
+- **Scored metrics** standardize the values on a 0-5 scale, making it easy to see outliers at a glance.
 - **Rollups** allow for quick high-level assessment (e.g., Company A stronger on profitability, Company B weaker on risk).
 - **Visualizations**:
   - Multi-ticker line plots show trend divergence over time.
   - Clustered bar plots show relative positioning across factors.
 
-**Note**: Scoring is absolute, not relative – a high score for one company does not lower the score for another. This ensures stability over time but means peers may all score high (or low) if the industry is generally strong (or weak).
+**Note**: Scoring is absolute, not relative - a high score for one company does not lower the score for another. This ensures stability over time but means peers may all score high (or low) if the industry is generally strong (or weak).
 
 # 7. Peer Multiples Comparisons
 
@@ -348,19 +369,19 @@ When comparing multiple companies:
 ### Theory
 Relative valuation through multiples is one of the most widely used tools in equity analysis. Instead of projecting cash flows or building detailed forecasts, multiples provide a market-based benchmark: how do similar companies trade relative to their earnings, sales, or operating cash flows?
 
-This library summarizes peer valuation bands (25th, 50th, and 75th percentiles) so you can anchor a company's valuation against a conservative, median, and bullish context. Note that the PE, PS, EV/EBITDA here are sourced as TTM ratios (latest trailing-twelve-months), not multi-year averages (unlike the earlier function for fundamental factors analysis).
+This library summarizes peer valuation bands (25th, 50th, and 75th percentiles) so you can anchor a company's valuation against a conservative, median, and bullish context. By default PE, PS, and EV/EBITDA are sourced as TTM ratios (latest trailing-twelve-months), not multi-year averages (unlike the earlier function for fundamental factors analysis). If you want a forward-looking signal, you can switch PE to forward PE with `multiple_basis="forward_pe"` while keeping PS and EV/EBITDA trailing.
 
 But the method is only as good as the peer group chosen.
 
 Selecting the right peer set is critical to getting a meaningful benchmark. Poorly chosen peers can distort the analysis and lead to misleading conclusions.
 
 When selecting peers, consider:
-- Industry & business model – companies should operate in the same or closely related industries.
-- Company size & market share – large-cap vs small-cap firms often trade at different multiples.
-- Geographic exposure – local vs global footprint changes growth, margin, and risk profiles.
-- Financial metrics – capital intensity, margin structure, reinvestment needs.
-- Customer base & product portfolio – degree of overlap in markets served.
-- Competitive positioning – companies with durable moats vs those with commoditized products.
+- Industry & business model - companies should operate in the same or closely related industries.
+- Company size & market share - large-cap vs small-cap firms often trade at different multiples.
+- Geographic exposure - local vs global footprint changes growth, margin, and risk profiles.
+- Financial metrics - capital intensity, margin structure, reinvestment needs.
+- Customer base & product portfolio - degree of overlap in markets served.
+- Competitive positioning - companies with durable moats vs those with commoditized products.
 
 While peer selection is outside the scope of this library, the analyst must exercise judgment to ensure apples-to-apples comparison.
 
@@ -370,6 +391,7 @@ While peer selection is outside the scope of this library, the analyst must exer
 - **target_ticker**: ticker of the company being benchmarked.
 - **tickers**: list of peer tickers.
 - **multiple_basis**: `"ttm"` (default) or `"forward_pe"` (uses Yahoo `forwardPE` when available for PE; PS and EV/EBITDA remain trailing and the output echoes this in metadata).
+- **peer_quality_diagnostics**: `True` adds coverage and dispersion diagnostics so you can see whether the peer set is reliable before trusting the valuation bands.
 
 You can opt-in to `include_target=True` if you want the target to be counted in the peer stats (not generally recommended for valuation comparability).
 
@@ -411,9 +433,9 @@ fig, ax = vit.plot_peer_metric_boxplot(
 
 ### Interpretation Guide
 **Lo / Med / Hi bands**:
-- P25 (Lo) → conservative benchmark.
-- P50 (Med) → fair/median estimate.
-- P75 (Hi) → optimistic benchmark.
+- P25 (Lo) -> conservative benchmark.
+- P50 (Med) -> fair/median estimate.
+- P75 (Hi) -> optimistic benchmark.
 
 **Relative positioning**:
 - If a target consistently sits below P25, it may be undervalued or fundamentally weaker than peers.
@@ -444,7 +466,7 @@ import ValueInvestingTools as vit
 vit.historical_average_share_prices(["MSFT","AAPL"])
 ```
 
-Note the CSV export is opt-in via `save_csv=True`; files saved under `./output`
+Note the CSV export is opt-in via `save_csv=True`; files saved under `./output`.
 
 ## 7.3 Conversion of peer multiples into per-share prices
 
@@ -473,14 +495,14 @@ Whereas the scenario-based DCF (Section 9) projects forward with explicit assump
 
 Therefore it is important to note that this function **does not introduce a separate terminal growth input**; instead it uses an averaged FCF base and historical CAGR (with guardrails) and discounts at WACC.
 
-The question it answers is: "If we assume the company's average historical FCF and growth continue indefinitely, what enterprise value (EV) does that imply – and how does it compare to today's market EV?"
+The question it answers is: "If we assume the company's average historical FCF and growth continue indefinitely, what enterprise value (EV) does that imply - and how does it compare to today's market EV-"
 
 The calculation is based on the Perpetuity Growth Method:
 
 $$EV_{\text{implied}} = \frac{FCF_{\text{avg}} \cdot (1+g)}{WACC - g}$$
 
 Where:
-- $FCF_{\text{avg}}$ = average historical free cash flow (last 3–5 years)
+- $FCF_{\text{avg}}$ = average historical free cash flow (last 3-5 years)
 - $g$ = average historical growth rate
 - $WACC = R_f + \beta \cdot ERP$ (using yfinance beta, required else raises error)
 - $g$ is capped at $WACC - 0.5\%$ to avoid unrealistic perpetuity assumptions
@@ -492,14 +514,14 @@ Where:
 - Firms with significant one-time items in historical FCF
 
 ## Options & defaults
-**Balanced (default)** — conservative-leaning, history-anchored:
-- Risk-free rate: **4.5%**
-- Equity risk premium: **6.0%** 
-- Fallback FCF growth: **2.0%**, with guardrail **g ≤ WACC − 0.5%**
+**Balanced (default)** - conservative-leaning, history-anchored:
+- Risk-free rate: **4.18%**
+- Equity risk premium: **4.23%** 
+- Fallback FCF growth: **2.0%**, with guardrail **g <= WACC - 0.5%**
 - FCF base window: **3 years** average by default
 - DCF horizon: **3 years**, then terminal (DCF only)
 
-- **More Conservative (quick stress test, optional)** — use when rates/risks feel elevated:
+- **More Conservative (quick stress test, optional)** - use when rates/risks feel elevated:
 - Keep the above, and optionally set `years=1/2/3`, or use `cf_base="recent_weighted"` / `recency_weight=0.6` (see function args) to emphasize latest years.
 
 ## Market Comparison
@@ -513,6 +535,7 @@ Output includes:
 - EV_Implied
 - Premium_% (positive = richer market valuation)
 - Notes (health/status messages).
+- `Valuation_Confidence` and `assumptions_snapshot_id` to track input quality and compare runs over time.
 
 ## Compute
 ```python
@@ -529,7 +552,7 @@ print(cmp)
 fig, ax = vit.plot_ev_observed_vs_implied(cmp)
 ```
 
-## Equity Bridge (EV → Equity → Per-share)
+## Equity Bridge (EV -> Equity -> Per-share)
 
 Once an implied EV is computed, it can be reconciled to equity value using standard adjustments:
 
@@ -539,11 +562,11 @@ Then:
 
 $$\text{Per-Share Implied} = \frac{\text{Equity}}{\text{Shares Outstanding}}$$
 
-**Note**: If Yahoo Finance has partial data - the function falls back to `sharesOutstanding × currentPrice` when `marketCap` is missing; otherwise leaves the field `None` and logs context in `Notes`.
+**Note**: If Yahoo Finance has partial data, the function falls back to `sharesOutstanding * currentPrice` when `marketCap` is missing; otherwise leaves the field `None` and logs context in `Notes`.
 
 Implemented via `compare_to_market_cap`
 
-`compare_to_market_cap(ticker_or_evdf, *, years=None, risk_free_rate=0.045, equity_risk_premium=0.060, growth=None, target_cagr_fallback=0.02, use_average_fcf_years=None, volatility_threshold=0.5, as_df=True, analysis_report_date=None)`
+`compare_to_market_cap(ticker_or_evdf, *, years=None, risk_free_rate=0.0418, equity_risk_premium=0.0423, growth=None, target_cagr_fallback=0.02, use_average_fcf_years=None, volatility_threshold=0.5, as_df=True, analysis_report_date=None)`
 
 **Purpose**: Compares Implied Equity Value (derived from implied EV) with Observed Market Capitalization from Yahoo Finance.
 
@@ -558,7 +581,7 @@ Implemented via `compare_to_market_cap`
 df_cap = compare_to_market_cap("AAPL", years=5, use_average_fcf_years=5)
 print(df_cap[["Ticker","Observed_MarketCap","Equity_Implied","Premium_%"]])
 
-# Example B – from an existing EV comparison:
+# Example B - from an existing EV comparison:
 df_ev   = compare_to_market_ev("AAPL", years=5)
 df_cap2 = compare_to_market_cap(df_ev)
 
@@ -613,17 +636,17 @@ This library uses a three-scenario approach (Low / Mid / High) to bracket uncert
 ## Key Methodology
 
 This runs **DCF scenarios (Low/Mid/High)** with an explicit **terminal growth** model. Defaults are slightly tightened vs earlier versions:
-- **Equity Risk Premium** 6.0%
+- **Equity Risk Premium** 4.23%
 - **Fallback FCF growth** 2.0% 
 - **FCF window** 3 years by default.
-- The terminal‐growth guardrail `g ≤ WACC − 0.5%`.
+- The terminal-growth guardrail `g <= WACC - 0.5%`.
 
 **WACC calculation** that includes both equity and debt costs:
 $WACC = \frac{E}{V} \times R_e + \frac{D}{V} \times R_d \times (1-T)$
 
-Where E/V is equity weight, D/V is debt weight, Re is cost of equity, Rd is cost of debt, and T is tax rate. For companies with no debt, this reduces to the cost of equity (Rf + β·ERP).
+Where E/V is equity weight, D/V is debt weight, Re is cost of equity, Rd is cost of debt, and T is tax rate. For companies with no debt, this reduces to the cost of equity (Rf + beta * ERP).
 
-Uses market value of equity, book value of debt, estimated cost of debt from interest expense, and effective tax rate. Falls back to cost of equity (Rf + β·ERP) for companies with minimal debt.
+Uses market value of equity, book value of debt, estimated cost of debt from interest expense, and effective tax rate. Falls back to cost of equity (Rf + beta * ERP) for companies with minimal debt.
 
 **Growth Rate Prioritization**: 
 1. FCF CAGR (if available and within -30% to +30% bounds)
@@ -631,9 +654,9 @@ Uses market value of equity, book value of debt, estimated cost of debt from int
 3. Fallback rate (default 3%)
 
 **Scenario Risk-Growth Alignment**: 
-- Low growth → Low WACC (lower risk)
-- Mid growth → Mid WACC 
-- High growth → High WACC (higher risk)
+- Low growth -> Low WACC (lower risk)
+- Mid growth -> Mid WACC 
+- High growth -> High WACC (higher risk)
 
 **FCF Baseline**: Uses normalized historical FCF with outlier removal and recent-period weighting, rather than simple averaging.
 
@@ -669,19 +692,19 @@ Returns DataFrame with columns: Scenario, Growth_Used, WACC_Used, Per_Share_Valu
 
 ## Options & defaults (quick reference)
 - `years=5` horizon (terminal at year 5).
-- `risk_free_rate=0.045, equity_risk_premium=0.06`.
+- `risk_free_rate=0.0418, equity_risk_premium=0.0423`.
 - `target_cagr_fallback=0.02` if peer/target growth is unavailable.
 - `peer_tickers=[...]` optionally seeds growth from peer FCF CAGRs (P25/P50/P75).
-- Growth always capped at WACC − 0.5%.
-- Requires beta; missing beta → error.
+- Growth always capped at WACC - 0.5%.
+- Requires beta; missing beta -> error.
 - Shared valuation defaults are exposed via `valuation_defaults(...)` for auditability.
 - `assumptions_as_of` can be passed to valuation functions to stamp the assumptions date in outputs.
 - `Assumptions_Used` payloads now include `assumptions_schema_version` and `assumptions_snapshot_id` for reproducible run-to-run comparison.
 
 **Advanced Controls for Transformational Companies**
 - `fcf_window_years=3` -> Use the latest 3 years of FCF by default. Set `None` to use all available FCF history, or set `1-3` to emphasize recent periods.
-- `manual_baseline_fcf=None` → Calculate from historical data (default). Override with current run-rate FCF for rapid growth companies.
-- `manual_growth_rates=None` → Use peer/target growth logic (default). Override with [low, mid, high] custom growth rates for AI/biotech/other high-growth sectors.
+- `manual_baseline_fcf=None` -> Calculate from historical data (default). Override with current run-rate FCF for rapid growth companies.
+- `manual_growth_rates=None` -> Use peer/target growth logic (default). Override with [low, mid, high] custom growth rates for AI/biotech/other high-growth sectors.
 
 ## Compute
 ```python
@@ -691,8 +714,8 @@ df = vit.dcf_three_scenarios(
     ticker="META",
     peer_tickers=["AAPL","GOOG","MSFT"],  # optional but recommended for better growth seeding
     years=5,
-    risk_free_rate=0.045,
-    equity_risk_premium=0.060,
+    risk_free_rate=0.0418,
+    equity_risk_premium=0.0423,
     target_cagr_fallback=0.02
 )
 print(df)
@@ -704,9 +727,22 @@ df_advanced = vit.dcf_three_scenarios(
     manual_baseline_fcf=72_000_000_000,      # Use current $72B run-rate
     manual_growth_rates=[0.20, 0.30, 0.40], # AI-appropriate growth rates
     risk_free_rate=0.04,                     # Current lower rates
-    equity_risk_premium=0.045
+    equity_risk_premium=0.0423
 )
 print(df_advanced)
+```
+
+## Sensitivity grid (WACC x terminal growth)
+Use `dcf_sensitivity_grid` to see how per-share values change across plausible WACC and terminal-growth ranges.
+
+```python
+grid = vit.dcf_sensitivity_grid(
+    ticker="META",
+    years=5,
+    wacc_values=[0.06, 0.08, 0.10],
+    growth_values=[0.01, 0.02, 0.03],
+)
+print(grid["grid_wide"])
 ```
 
 ## Interpretation guide
@@ -767,7 +803,7 @@ This helper computes CAGRs from the annual statements, with safe fallbacks and c
 
 ### What it Does
 - Computes Revenue CAGR, Net Income (Earnings) CAGR, and Free Cash Flow (FCF) CAGR from the most recent clean annual points.
-- Uses classic CAGR: (last/first)^(1/n)−1
+- Uses classic CAGR: (last/first)^(1/n)1
 - Where n is the year span between first and last observation. Returns Period_Start_Year and Period_End_Year so you can see the window used. FCF CAGR is only computed when both endpoints are positive (avoids undefined growth through/around zero).
 
 ### Usage
@@ -791,14 +827,14 @@ To make results auditable, most functions in this library return a health/status
 Therefore most functions in this library emit **data quality / completeness notes** inline with their outputs. This ensures that missing or incomplete inputs are always visible and traceable.
 
 ## Inline health fields
-- **`data_incomplete`** → Boolean flag, per row (per ticker where applicable).
-- **`Notes`** → String or list of short messages describing gaps, fallbacks, or assumptions.
+- **`data_incomplete`**  Boolean flag, per row (per ticker where applicable).
+- **`Notes`**  String or list of short messages describing gaps, fallbacks, or assumptions.
 
 Examples:
-- `compute_fundamentals_actuals` → `"Revenue series too short (<3 yrs)"`, `"FCF CAGR undefined (non-positive endpoints)"`.
-- `historical_average_share_prices` → `"No data to compute 180d average"`.
-- `compare_to_market_cap` → `"Minority Interest missing; treated as 0"`.
-- `dcf_three_scenarios` → `"Historical FCF highly volatile (CoV > threshold)"`.
+- `compute_fundamentals_actuals`  `"Revenue series too short (<3 yrs)"`, `"FCF CAGR undefined (non-positive endpoints)"`.
+- `historical_average_share_prices`  `"No data to compute 180d average"`.
+- `compare_to_market_cap`  `"Minority Interest missing; treated as 0"`.
+- `dcf_three_scenarios` -> `"Historical FCF highly volatile (CoV > threshold)"`.
 
 These fields are attached at the **row level** (so multi-ticker outputs have different notes per ticker).
 
@@ -819,9 +855,9 @@ The `orchestrator_function` automatically collects health notes from all sub-fun
 
 ## Rendering health reports
 Three helper functions convert health reports into human-friendly formats:
-- `health_to_tables(health_report)` → Normalizes into a pandas.DataFrame with columns: Source | Ticker | Data Incomplete | Notes
-- `health_to_markdown(health_report)` → Renders the same as a Markdown table.
-- `save_health_report_excel(health_report, path="...")` → Saves both the normalized table and the raw JSON to Excel.
+- `health_to_tables(health_report)` -> Normalizes into a pandas.DataFrame with columns: Source | Ticker | Data Incomplete | Notes
+- `health_to_markdown(health_report)` -> Renders the same as a Markdown table.
+- `save_health_report_excel(health_report, path="...")` -> Saves both the normalized table and the raw JSON to Excel.
 
 These helpers accept both:
 - the new schema (list of blocks, per-function/per-ticker), and
@@ -830,12 +866,12 @@ These helpers accept both:
 ## Notes - How to Access
 Notes are usually returned as a column (e.g., in dcf_three_scenarios) or as a dict alongside the main DataFrame. Examples you might see:
 - "TTM constructed from last 4 quarters"
-- "Growth capped at WACC−0.5%"
+- "Growth capped at WACC - 0.5%"
 - "Revenue CAGR based on 3 annual points only"
-- "Beta missing → cannot compute WACC"
-- "Net debt missing → approximated from latest balance sheet"
+- "Beta missing -> cannot compute WACC"
+- "Net debt missing -> approximated from latest balance sheet"
 
-These make the analysis explainable – you can see not just the numbers, but also the assumptions and shortcuts applied under the hood.
+These make the analysis explainable - you can see not just the numbers, but also the assumptions and shortcuts applied under the hood.
 
 ## Usage example
 ```python
@@ -852,37 +888,37 @@ save_health_report_excel(out["data_health_report"], path="output/NVDA_health.xls
 ```
 
 ## Interpretation Guide
-- High missing_pct (>20%) → metric may not be reliable across tickers.
-- Low n_unique (e.g., 1) → values may be stale or incomplete (e.g., beta not reported).
-- Short CAGR windows → flagged in notes, meaning growth scores may be noisy.
-- Zero/NaN scores → not an error, but a signal that data was unavailable or flagged for caution.
+- High missing_pct (>20%) -> metric may not be reliable across tickers.
+- Low n_unique (e.g., 1) -> values may be stale or incomplete (e.g., beta not reported).
+- Short CAGR windows -> flagged in notes, meaning growth scores may be noisy.
+- Zero/NaN scores -> not an error, but a signal that data was unavailable or flagged for caution.
 
-⚠️ **Best practice**: Always review health notes alongside metrics before drawing conclusions. A "perfect-looking" score may hide weak underlying coverage.
+ **Best practice**: Always review health notes alongside metrics before drawing conclusions. A "perfect-looking" score may hide weak underlying coverage.
 
 # 11. Summary of Functions
 
-This section provides a quick reference to the public functions in the library. Ordered by workflow stage (from single-ticker fundamentals → peer comparisons → valuation → visualization → health). Each row shows the task, the function(s), a plain-language purpose, key options, and a brief note on what kind of health/notes flags you may encounter. Internal helpers (e.g. _fetch_timeseries_for_plot) are intentionally excluded.
+This section provides a quick reference to the public functions in the library. Ordered by workflow stage (from single-ticker fundamentals -> peer comparisons -> valuation -> visualization -> health). Each row shows the task, the function(s), a plain-language purpose, key options, and a brief note on what kind of health/notes flags you may encounter. Internal helpers (e.g. _fetch_timeseries_for_plot) are intentionally excluded.
 
 | Task | Function(s) | Purpose | Key Options | Notes / Data Health |
 |------|-------------|---------|-------------|---------------------|
 | Single-company snapshot | `fundamentals_ttm_vs_average` | Compare TTM vs multi-year averages for one ticker | `basis="annual"` or `"ttm"` | Notes on missing items, short history |
-| Multi-company fundamentals | `compute_fundamentals_actuals` | Compute raw metrics (profitability, growth, reinvestment, risk) | `basis`, `save_csv`, `as_df` | Missing values flagged; CAGR needs ≥3 years |
+| Multi-company fundamentals | `compute_fundamentals_actuals` | Compute raw metrics (profitability, growth, reinvestment, risk) | `basis`, `save_csv`, `as_df` | Missing values flagged; CAGR needs 3 years |
 | Price snapshots | `historical_average_share_prices` | Return average prices over 1d/30d/90d/180d windows | `save_csv`, `as_df` | Returns Ticker, avg_price_1d/30d/90d/180d, price_asof, Notes |
-| Fundamental scoring | `compute_fundamentals_scores` | Apply 0–5 scoring, roll up to factors and total | `basis`, `merge_with_actuals` | Includes Notes/data_incomplete when merge_with_actuals=True |
-| Peer multiples | `peer_multiples` | Per-share valuation bands from P25/P50/P75 multiples | `basis="ttm"`, peers list | Peer choice critical; NaNs flagged if ratios missing |
-| Peer multiples → price | `price_from_peer_multiples` | Convert peer multiple bands (PE/PS/EV-EBITDA) into implied per-share values | `ticker` (optional), `save_csv`, `as_df` | Uses latest shares, debt, cash, MI for EV→Equity bridge; echoes Inputs_Used for auditability |
-| Growth metrics | `historical_growth_metrics` | Compute Revenue, Earnings, and FCF CAGRs with clear start/end years | `min_years`, `save_csv`, `as_df` | FCF CAGR requires ≥3 annual points and positive endpoints; Notes field explains gaps |
+| Fundamental scoring | `compute_fundamentals_scores` | Apply 0-5 scoring, roll up to factors and total | `basis`, `merge_with_actuals` | Includes Notes/data_incomplete when merge_with_actuals=True |
+| Peer multiples | `peer_multiples` | Per-share valuation bands from P25/P50/P75 multiples | `multiple_basis="ttm"`, peers list | Peer choice critical; NaNs flagged if ratios missing |
+| Peer multiples -> price | `price_from_peer_multiples` | Convert peer multiple bands (PE/PS/EV-EBITDA) into implied per-share values | `ticker` (optional), `save_csv`, `as_df` | Uses latest shares, debt, cash, MI for EV->Equity bridge; echoes Inputs_Used for auditability |
+| Growth metrics | `historical_growth_metrics` | Compute Revenue, Earnings, and FCF CAGRs with clear start/end years | `min_years`, `save_csv`, `as_df` | FCF CAGR requires 3 annual points and positive endpoints; Notes field explains gaps |
 | Implied EV | `dcf_implied_enterprise_value` | Compute EV from normalized historical FCF & growth with enhanced validation | `window_years`, `risk_free_rate`, `equity_risk_premium`, `growth`, `volatility_threshold` | Prioritizes FCF CAGR over revenue CAGR; normalized FCF baseline; volatility warnings; reasonableness checks for EV/FCF multiples; emits machine-readable `Valuation_Confidence` |
 | Compare EVs | `compare_to_market_ev` | Compare implied vs observed EV with enhanced market data validation | `ticker`, `years`, `growth`, `volatility_threshold` | Nuanced premium interpretation (5%, 20% thresholds); fallback EV estimation from market cap + debt - cash; carries/enriches `Valuation_Confidence` |
-| Equity bridge | `implied_equity_value_from_ev` | Translate EV → equity → per-share with robust balance sheet handling | `ticker`, `implied_ev`, `notes_from_ev` | Has multiple fallback sources for debt/cash data; per-share calculation added; enhanced validation warnings for negative equity and high leverage |
+| Equity bridge | `implied_equity_value_from_ev` | Translate EV -> equity -> per-share with robust balance sheet handling | `ticker`, `implied_ev`, `notes_from_ev` | Has multiple fallback sources for debt/cash data; per-share calculation added; enhanced validation warnings for negative equity and high leverage |
 | DCF (scenario-based) | `dcf_three_scenarios` | Compute Low/Mid/High DCF per-share values using proper WACC with advanced controls for transformational companies | `years`, `peer_tickers`, `risk_free_rate`, `equity_risk_premium`, `target_cagr_fallback`, `fcf_window_years`, `manual_baseline_fcf`, `manual_growth_rates` | Proper WACC including debt costs; prioritizes FCF CAGR; corrected risk-growth relationship; enhanced FCF normalization; NEW advanced controls for high-growth/transformational companies; EV/FCF multiple warnings |
 | DCF sensitivity grid | `dcf_sensitivity_grid` | Build WACC x terminal-growth sensitivity tables (wide matrix + long rows) | `ticker`, `years`, `growth`, `wacc_values`, `growth_values` | Reuses DCF baseline inputs and guardrails; returns `inputs_used` + notes; caps growth at `WACC - gap` per cell |
-| Visualize fundamentals | `plot_single_metric_ts`, `plot_multi_tickers_multi_metrics_ts` | Time-series plots (single/multi metrics) | `family`, `metrics`, `basis` | Missing values → gaps in chart |
+| Visualize fundamentals | `plot_single_metric_ts`, `plot_multi_tickers_multi_metrics_ts` | Time-series plots (single/multi metrics) | `family`, `metrics`, `basis` | Missing values -> gaps in chart |
 | Visualize scores | `plot_scores_clustered` | Clustered bar charts of scores across tickers | `metrics`, `include_total` | Uses scored DataFrame; flags carry through |
 | Visualize multiples | `plot_peer_metric_boxplot` | Boxplot + target overlay using peer_comp_detail + peer_multiple_bands_wide | `metric`, `target_ticker` | Target shown even if excluded from stats |
 | Visualize DCF | `plot_dcf_scenarios_vs_price` | Plot Low/Mid/High DCF scenario values | `ticker`, scenario DataFrame | Health notes appear in legend/labels |
 | Data health reporting | `health_to_tables`, `health_to_markdown`, `save_health_report_excel` | Normalize and render health notes across all functions | `as_df`, `sort`, output path | New schema supports per-ticker blocks (Source, Ticker, Data Incomplete, Notes) |
-| Automated orchestrator | `orchestrator_function` | Run complete workflow (fundamentals → scores → multiples → EV → Equity → DCF) | `target_ticker`, `peer_tickers`, `basis`, `years`, WACC/growth options, `save_csv` | Returns structured dict with all outputs; data_health_report is list of blocks (per-function and per-ticker) |
+| Automated orchestrator | `orchestrator_function` | Run complete workflow (fundamentals -> scores -> multiples -> EV -> Equity -> DCF) | `target_ticker`, `peer_tickers`, `basis`, `years`, WACC/growth options, `save_csv` | Returns structured dict with all outputs; data_health_report is list of blocks (per-function and per-ticker) |
 
 **Tip**: Always check the Notes / Data Health outputs. They are designed to surface issues (e.g., missing beta, truncated growth windows, NaNs) that might otherwise be hidden in the numbers.
 
@@ -912,8 +948,8 @@ orchestrator_function(
     *,
     include_target_in_peers: bool = False,
     years: int = 5,
-    risk_free_rate: float = 0.045,
-    equity_risk_premium: float = 0.060,
+    risk_free_rate: float = 0.0418,
+    equity_risk_premium: float = 0.0423,
     growth: float | None = None,
     target_cagr_fallback: float = 0.02,
     use_average_fcf_years: Optional[int]=3,
@@ -927,16 +963,16 @@ orchestrator_function(
 
 ## Output
 **Output keys**:
-- `analysis_report_date` → ISO string
-- `ticker` → target ticker
-- `peer_tickers` → list of peers (with target always included)
-- `avg_price_1d` / `30d` / `90d` / `180d` → price anchors
-- `growth_metrics` → DataFrame of CAGRs
+- `analysis_report_date`  ISO string
+- `ticker`  target ticker
+- `peer_tickers`  list of peers (with target always included)
+- `avg_price_1d` / `30d` / `90d` / `180d`  price anchors
+- `growth_metrics`  DataFrame of CAGRs
 - `fundamentals_actuals` / `fundamentals_scores`
 - `peer_multiples` / `price_from_peer_multiples`
 - `ev_vs_market` / `market_cap_vs_equity`
 - `dcf_scenarios`
-- `data_health_report` → list of dicts with fields:
+- `data_health_report`  list of dicts with fields:
   - `source` (e.g., "compute_fundamentals_actuals")
   - `ticker` (if applicable)
   - `data_incomplete` (True/False/None)
@@ -966,13 +1002,13 @@ print(res.keys())
 # dict_keys(['fundamentals','scores','peer_multiples',
 #            'dcf_scenarios','implied_ev','equity_value','health'])
 
-res["fundamentals"]     # → raw metrics DataFrame.
-res["scores"]           # → scored fundamentals DataFrame (0–5 with rollups).
-res["peer_multiples"]   # → dict of PE / PS / EV-EBITDA valuation bands.
-res["dcf_scenarios"]    # → Low / Mid / High DCF per-share values.
-res["implied_ev"]       # → single float (implied EV).
-res["equity_value"]     # → DataFrame (equity bridge to per-share implied value).
-res["health"]           # → list of diagnostic notes collected from all sub-functions.
+res["fundamentals"]     #  raw metrics DataFrame.
+res["scores"]           #  scored fundamentals DataFrame (0-5 with rollups).
+res["peer_multiples"]   #  dict of PE / PS / EV-EBITDA valuation bands.
+res["dcf_scenarios"]    #  Low / Mid / High DCF per-share values.
+res["implied_ev"]       #  single float (implied EV).
+res["equity_value"]     #  DataFrame (equity bridge to per-share implied value).
+res["health"]           #  list of diagnostic notes collected from all sub-functions.
 ```
 
 ## Interpretation Guide
@@ -1005,6 +1041,7 @@ Use this when you need a full audit trail in one call. Ideal for:
 - This library is intended for educational and analytical use only. It does not constitute investment advice.
 - Outputs should always be interpreted alongside qualitative analysis (management quality, competitive dynamics, regulatory environment).
 - Historical financials are taken from Yahoo Finance via yfinance; occasional gaps or inconsistencies are expected.
+- Assumption rationale and override guidance: `docs/ASSUMPTIONS_RATIONALE.md`.
 
 ## Roadmap
 Planned improvements for future revisions include:
@@ -1031,6 +1068,6 @@ python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 # 14. License
-This project is licensed under the MIT License – you are free to use, modify, and distribute it, provided that the original copyright notice and this permission notice are included in all copies or substantial portions of the software.
+This project is licensed under the MIT License - you are free to use, modify, and distribute it, provided that the original copyright notice and this permission notice are included in all copies or substantial portions of the software.
 
 **
