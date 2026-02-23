@@ -1020,6 +1020,8 @@ Contributions are welcome!
 - Fork the repo, create a feature branch, and submit a pull request.
 - Please align code style with existing modules and include basic automated test coverage (`unittest` or `pytest`).
 - Suggestions for new metrics, visualization types, or health checks are especially appreciated.
+- Release process and semantic versioning: see `docs/RELEASE_PROCESS.md`.
+- Changelog: `CHANGELOG.md`.
 
 ### Local validation commands
 ```bash
