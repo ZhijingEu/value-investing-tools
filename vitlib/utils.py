@@ -186,8 +186,8 @@ def to_records(obj, analysis_report_date: Optional[str] = None, schema_version: 
 
 # Centralized valuation defaults (can be overridden per call).
 VALUATION_DEFAULTS: Dict[str, float] = {
-    "risk_free_rate": 0.045,
-    "equity_risk_premium": 0.060,
+    "risk_free_rate": 0.0418,
+    "equity_risk_premium": 0.0423,
     "target_cagr_fallback": 0.020,
     "fcf_window_years": 3,
     "terminal_growth_gap": 0.005,  # g <= WACC - gap
@@ -218,6 +218,7 @@ def valuation_defaults(
     equity_risk_premium: Optional[float] = None,
     target_cagr_fallback: Optional[float] = None,
     fcf_window_years: Optional[int] = None,
+    terminal_growth_gap: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Return a normalized assumptions payload for valuation outputs and audits.
@@ -228,7 +229,7 @@ def valuation_defaults(
         "equity_risk_premium": VALUATION_DEFAULTS["equity_risk_premium"] if equity_risk_premium is None else float(equity_risk_premium),
         "target_cagr_fallback": VALUATION_DEFAULTS["target_cagr_fallback"] if target_cagr_fallback is None else float(target_cagr_fallback),
         "fcf_window_years": VALUATION_DEFAULTS["fcf_window_years"] if fcf_window_years is None else int(fcf_window_years),
-        "terminal_growth_gap": VALUATION_DEFAULTS["terminal_growth_gap"],
+        "terminal_growth_gap": VALUATION_DEFAULTS["terminal_growth_gap"] if terminal_growth_gap is None else float(terminal_growth_gap),
         "assumptions_schema_version": VALUATION_ASSUMPTIONS_SCHEMA_VERSION,
         "assumptions_source": "ValueInvestingTools.valuation_defaults",
     }
