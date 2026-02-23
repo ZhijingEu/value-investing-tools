@@ -74,7 +74,7 @@ class TestValuationConfidence(unittest.TestCase):
         }])
 
         with patch.object(valuation, "dcf_implied_enterprise_value", return_value=implied):
-            with patch.object(valuation.yf, "Ticker", return_value=_FakeTicker({"enterpriseValue": None, "marketCap": None})):
+            with patch.object(valuation, "_provider_info", return_value={"enterpriseValue": None, "marketCap": None}):
                 out = vit.compare_to_market_ev("TEST", as_df=True, analysis_report_date="2026-02-22")
 
         conf = out.loc[0, "Valuation_Confidence"]
@@ -104,7 +104,7 @@ class TestValuationConfidence(unittest.TestCase):
         }])
 
         with patch.object(valuation, "implied_equity_value_from_ev", return_value=eq_df):
-            with patch.object(valuation.yf, "Ticker", return_value=_FakeTicker({"marketCap": None, "sharesOutstanding": None, "currentPrice": None})):
+            with patch.object(valuation, "_provider_info", return_value={"marketCap": None, "sharesOutstanding": None, "currentPrice": None}):
                 out = vit.compare_to_market_cap(ev_df, as_df=True, analysis_report_date="2026-02-22")
 
         conf = out.loc[0, "Valuation_Confidence"]

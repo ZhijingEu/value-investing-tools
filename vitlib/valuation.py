@@ -419,8 +419,8 @@ def _dcf_sensitivity_grid_from_inputs(
     years: int,
     wacc_values: List[float],
     growth_values: List[float],
-    risk_free_rate: float,
-    guardrails: Dict[str, Any],
+    risk_free_rate: float = VALUATION_DEFAULTS["risk_free_rate"],
+    guardrails: Optional[Dict[str, Any]] = None,
     terminal_growth_gap: float = VALUATION_DEFAULTS["terminal_growth_gap"],
     growth_floor: float = DEFAULT_GUARDRAILS["growth_floor"],
 ) -> pd.DataFrame:
@@ -446,10 +446,11 @@ def _dcf_sensitivity_grid_from_inputs(
                     g_tmp = growth_floor
                     g_floored = True
 
+                guard = guardrails or DEFAULT_GUARDRAILS
                 cap_level = _terminal_growth_cap(
                     float(w_in),
                     float(risk_free_rate),
-                    guardrails=guardrails,
+                    guardrails=guard,
                     terminal_growth_gap=float(terminal_growth_gap),
                 )
                 if g_tmp >= cap_level:
