@@ -73,6 +73,49 @@ class TestMcpResponseContracts(unittest.TestCase):
         self.assertEqual(payload["ticker"], "MSFT")
         self.assertIn("grid_wide", payload)
         self.assertIn("grid_long", payload)
+        self.assertIn("inputs_used", payload)
+
+    def test_tool_peer_multiples_returns_expected_payload(self):
+        peer_comp_detail = pd.DataFrame([{"ticker": "AAA", "pe_ratio": 10.0}])
+        peer_multiple_bands_wide = pd.DataFrame({"Min": [10.0]}, index=["PE"])
+        peer_comp_bands = pd.DataFrame([{"Scenario": "PE_Min", "Valuation_per_Share": 123.0}])
+        fake = {
+            "target_ticker": "AAA",
+            "multiple_basis": "forward_pe",
+            "metric_basis_map": {"PE": "forwardPE"},
+            "notes": ["ok"],
+            "peer_quality_diagnostics": {"peer_count_for_stats": 1, "metrics": [], "warnings": []},
+            "peer_comp_detail": peer_comp_detail,
+            "peer_multiple_bands_wide": peer_multiple_bands_wide,
+            "peer_comp_bands": peer_comp_bands,
+        }
+        with patch.object(server.vit, "peer_multiples", return_value=fake):
+            out = server.tool_peer_multiples(["AAA", "BBB"], target_ticker="AAA", include_target=False, multiple_basis="forward_pe")
+
+        self.assertIsInstance(out, list)
+        self.assertGreaterEqual(len(out), 4)
+        payload = json.loads(out[-1]["text"])
+        self.assertEqual(payload["target_ticker"], "AAA")
+        self.assertEqual(payload["multiple_basis"], "forward_pe")
+        self.assertIn("metric_basis_map", payload)
+        self.assertIn("peer_quality_diagnostics", payload)
+
+    def test_tool_compare_to_market_ev_returns_confidence(self):
+        df = pd.DataFrame([{
+            "Ticker": "TEST",
+            "Observed_EV": 1000.0,
+            "EV_Implied": 900.0,
+            "Premium_%": 11.1,
+            "Valuation_Confidence": {"score": 0.8, "level": "high"},
+            "Assumptions_Used": {"assumptions_snapshot_id": "vit-val-123"},
+        }])
+        with patch.object(server.vit, "compare_to_market_ev", return_value=df):
+            out = server.tool_compare_to_market_ev("TEST")
+
+        self.assertIsInstance(out, list)
+        payload = json.loads(out[0]["text"])
+        self.assertEqual(payload[0]["Valuation_Confidence"]["level"], "high")
+        self.assertEqual(payload[0]["Assumptions_Used"]["assumptions_snapshot_id"], "vit-val-123")
 
     def test_plot_scores_clustered_returns_image_resource_contract(self):
         class _DummyFig:
