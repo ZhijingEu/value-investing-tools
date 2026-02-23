@@ -31,6 +31,8 @@ These values are stability guardrails rather than universally accepted finance s
 Examples:
 - Terminal growth cap: `g <= WACC - terminal_growth_gap` (default gap = 0.5%).
 - Additional terminal growth cap: `g <= risk_free_rate + terminal_growth_rfr_spread` (default spread = 0.5%), applied when `terminal_growth_cap_mode="min_wacc_rfr"`.
+
+Note: The risk-free anchored cap is a stability guardrail aligned with stable-growth guidance (terminal growth should not persistently exceed long-run nominal growth). Use overrides to match your market or research standard.
 - Growth floor: `-5%`.
 - Revenue CAGR haircut: `0.8` (conservative adjustment).
 - Scenario multipliers for Low/Mid/High growth: `0.6 / 1.0 / 1.3`.
