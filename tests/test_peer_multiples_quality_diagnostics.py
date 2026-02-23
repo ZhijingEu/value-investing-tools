@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import ValueInvestingTools as vit
+import vitlib.peers as peers
 
 
 class TestPeerMultiplesQualityDiagnostics(unittest.TestCase):
@@ -48,7 +49,7 @@ class TestPeerMultiplesQualityDiagnostics(unittest.TestCase):
             },
         }
 
-        with patch.object(vit, "_pull_company_snapshot", side_effect=lambda t: snapshots[t]):
+        with patch.object(peers, "_pull_company_snapshot", side_effect=lambda t: snapshots[t]):
             out = vit.peer_multiples(
                 ["AAA", "BBB", "CCC"],
                 target_ticker="AAA",

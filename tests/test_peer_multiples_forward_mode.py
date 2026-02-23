@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import ValueInvestingTools as vit
+import vitlib.peers as peers
 
 
 class TestPeerMultiplesForwardMode(unittest.TestCase):
@@ -36,7 +37,7 @@ class TestPeerMultiplesForwardMode(unittest.TestCase):
         def _fake_pull(symbol):
             return snapshots[symbol]
 
-        with patch.object(vit, "_pull_company_snapshot", side_effect=_fake_pull):
+        with patch.object(peers, "_pull_company_snapshot", side_effect=_fake_pull):
             out = vit.peer_multiples(
                 ["AAA", "BBB", "CCC"],
                 target_ticker="AAA",

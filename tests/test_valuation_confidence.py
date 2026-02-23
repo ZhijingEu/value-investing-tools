@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pandas as pd
 
 import ValueInvestingTools as vit
+import vitlib.valuation as valuation
 
 
 class _FakeTicker:
@@ -39,12 +40,12 @@ class TestValuationConfidence(unittest.TestCase):
         }
         fcf_series = pd.Series([50.0, 55.0, 60.0, 65.0], index=[0, 1, 2, 3])
 
-        with patch.object(vit, "_pull_company_snapshot", return_value=snap):
-            with patch.object(vit, "_calculate_wacc", return_value=0.10):
-                with patch.object(vit, "_fcf_series_from_cashflow", return_value=fcf_series):
-                    with patch.object(vit, "_normalized_fcf_baseline", return_value=60.0):
-                        with patch.object(vit, "_fcf_cagr_from_series", return_value=None):
-                            with patch.object(vit, "_revenue_cagr_from_series", return_value=0.06):
+        with patch.object(valuation, "_pull_company_snapshot", return_value=snap):
+            with patch.object(valuation, "_calculate_wacc", return_value=0.10):
+                with patch.object(valuation, "_fcf_series_from_cashflow", return_value=fcf_series):
+                    with patch.object(valuation, "_normalized_fcf_baseline", return_value=60.0):
+                        with patch.object(valuation, "_fcf_cagr_from_series", return_value=None):
+                            with patch.object(valuation, "_revenue_cagr_from_series", return_value=0.06):
                                 out = vit.dcf_implied_enterprise_value(
                                     "TEST",
                                     years=5,
@@ -72,8 +73,8 @@ class TestValuationConfidence(unittest.TestCase):
             "Notes": "",
         }])
 
-        with patch.object(vit, "dcf_implied_enterprise_value", return_value=implied):
-            with patch.object(vit.yf, "Ticker", return_value=_FakeTicker({"enterpriseValue": None, "marketCap": None})):
+        with patch.object(valuation, "dcf_implied_enterprise_value", return_value=implied):
+            with patch.object(valuation.yf, "Ticker", return_value=_FakeTicker({"enterpriseValue": None, "marketCap": None})):
                 out = vit.compare_to_market_ev("TEST", as_df=True, analysis_report_date="2026-02-22")
 
         conf = out.loc[0, "Valuation_Confidence"]
@@ -102,8 +103,8 @@ class TestValuationConfidence(unittest.TestCase):
             "Notes": "",
         }])
 
-        with patch.object(vit, "implied_equity_value_from_ev", return_value=eq_df):
-            with patch.object(vit.yf, "Ticker", return_value=_FakeTicker({"marketCap": None, "sharesOutstanding": None, "currentPrice": None})):
+        with patch.object(valuation, "implied_equity_value_from_ev", return_value=eq_df):
+            with patch.object(valuation.yf, "Ticker", return_value=_FakeTicker({"marketCap": None, "sharesOutstanding": None, "currentPrice": None})):
                 out = vit.compare_to_market_cap(ev_df, as_df=True, analysis_report_date="2026-02-22")
 
         conf = out.loc[0, "Valuation_Confidence"]

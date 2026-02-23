@@ -1,7 +1,8 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `ValueInvestingTools.py`: main analytics library (fundamentals, peer multiples, EV/DCF, plotting helpers).
+- `ValueInvestingTools.py`: facade that re-exports the modular core from `vitlib/` (kept for API compatibility).
+- `vitlib/`: core modules (`utils`, `fundamentals`, `peers`, `valuation`, `health`, `plots`, `orchestrator`).
 - `server.py`: MCP stdio server exposing library functions as tools.
 - `vit/__init__.py`: import wrapper that re-exports the active `ValueInvestingTools` module.
 - `providers/`: provider adapter scaffolding (`base.py`, `yahoo.py`) for future data-source abstraction.
@@ -14,7 +15,7 @@
   - `python -m venv .venv`
   - `.\.venv\Scripts\Activate.ps1`
 - Install deps: `pip install -r requirements.txt`
-- Syntax smoke check: `python -m py_compile server.py ValueInvestingTools.py vit\__init__.py`
+- Syntax smoke check: `python -m py_compile server.py ValueInvestingTools.py vit\__init__.py vitlib\*.py`
 - Run MCP server locally: `python server.py`
 - Quick import check: `python -c "import vit; print(vit.__version__)"`
 

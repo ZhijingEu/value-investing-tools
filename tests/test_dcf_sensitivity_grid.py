@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pandas as pd
 
 import ValueInvestingTools as vit
+import vitlib.valuation as valuation
 
 
 class TestDcfSensitivityGrid(unittest.TestCase):
@@ -40,12 +41,12 @@ class TestDcfSensitivityGrid(unittest.TestCase):
         }
         fcf_series = pd.Series([80.0, 90.0, 100.0, 110.0], index=[0, 1, 2, 3])
 
-        with patch.object(vit, "_pull_company_snapshot", return_value=snap):
-            with patch.object(vit, "_calculate_wacc", return_value=0.10):
-                with patch.object(vit, "_fcf_series_from_cashflow", return_value=fcf_series):
-                    with patch.object(vit, "_normalized_fcf_baseline", return_value=100.0):
-                        with patch.object(vit, "_fcf_cagr_from_series", return_value=0.03):
-                            with patch.object(vit, "_revenue_cagr_from_series", return_value=0.04):
+        with patch.object(valuation, "_pull_company_snapshot", return_value=snap):
+            with patch.object(valuation, "_calculate_wacc", return_value=0.10):
+                with patch.object(valuation, "_fcf_series_from_cashflow", return_value=fcf_series):
+                    with patch.object(valuation, "_normalized_fcf_baseline", return_value=100.0):
+                        with patch.object(valuation, "_fcf_cagr_from_series", return_value=0.03):
+                            with patch.object(valuation, "_revenue_cagr_from_series", return_value=0.04):
                                 out = vit.dcf_sensitivity_grid(
                                     "TEST",
                                     years=5,

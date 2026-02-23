@@ -1023,7 +1023,7 @@ Contributions are welcome!
 
 ### Local validation commands
 ```bash
-python -m py_compile server.py ValueInvestingTools.py vit/__init__.py
+python -m py_compile server.py ValueInvestingTools.py vit/__init__.py vitlib/*.py
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
