@@ -576,7 +576,7 @@ fig, ax = vit.plot_ev_observed_vs_implied(cmp)
 
 Once an implied EV is computed, it can be reconciled to equity value using standard adjustments:
 
-$$\text{Equity} = EV - \text{Net Debt} + \text{Cash \& Equivalents} - \text{Minority Interest}$$
+$$\text{Equity} = EV - \text{Net Debt} - \text{Minority Interest}$$
 
 Then:
 
@@ -1091,3 +1091,6 @@ python -m unittest discover -s tests -p "test_*.py" -v
 This project is licensed under the MIT License - you are free to use, modify, and distribute it, provided that the original copyright notice and this permission notice are included in all copies or substantial portions of the software.
 
 **
+
+
+
