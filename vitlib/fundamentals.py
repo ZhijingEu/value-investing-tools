@@ -52,6 +52,43 @@ _WEIGHTS = {
     'risk': {'de_ratio': 0.4, 'beta': 0.4, 'current_ratio': 0.2}
 }
 
+DEFAULT_SCORING: Dict[str, Any] = {
+    "thresholds": _THRESHOLDS,
+    "weights": _WEIGHTS,
+    "data_incomplete_threshold": 0.25,
+    "recommendation_cutoffs": {
+        "total_high": 17,
+        "elite_total": 18,
+        "elite_min_factor": 4,
+        "risk_low": 2.5,
+        "reinvest_low": 2.0,
+        "avg_pg_low": 2.5,
+        "total_mid_low": 14,
+        "total_mid_high": 17,
+        "risk_mid_low": 2.0,
+        "total_low": 11,
+    },
+}
+
+def _merge_scoring_overrides(overrides: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not overrides:
+        return DEFAULT_SCORING
+    merged = {
+        "thresholds": DEFAULT_SCORING["thresholds"],
+        "weights": DEFAULT_SCORING["weights"],
+        "data_incomplete_threshold": DEFAULT_SCORING["data_incomplete_threshold"],
+        "recommendation_cutoffs": dict(DEFAULT_SCORING["recommendation_cutoffs"]),
+    }
+    if overrides.get("thresholds") is not None:
+        merged["thresholds"] = overrides["thresholds"]
+    if overrides.get("weights") is not None:
+        merged["weights"] = overrides["weights"]
+    if overrides.get("data_incomplete_threshold") is not None:
+        merged["data_incomplete_threshold"] = overrides["data_incomplete_threshold"]
+    if overrides.get("recommendation_cutoffs") is not None:
+        merged["recommendation_cutoffs"].update(overrides["recommendation_cutoffs"])
+    return merged
+
 _RAW_METRICS = [
     'roe','profit_margin','op_margin','roa',
     'revenue_cagr','earnings_cagr','peg',
@@ -124,10 +161,11 @@ def _fetch_statements(ticker: str) -> Tuple[dict, pd.DataFrame, pd.DataFrame, pd
 
     return info, financials, cashflow, balance, period_range, min_periods
 
-def _score_metric(value: Optional[float], metric: str) -> Optional[int]:
+def _score_metric(value: Optional[float], metric: str, thresholds: Optional[Dict[str, List[float]]] = None) -> Optional[int]:
     if value is None or (isinstance(value, float) and not np.isfinite(value)):
         return None
-    cuts = _THRESHOLDS[metric]
+    use_thresholds = thresholds or _THRESHOLDS
+    cuts = use_thresholds[metric]
     if metric in ['peg', 'capex_ratio', 'de_ratio', 'beta']:  # lower is better
         if value <= cuts[3]: return 5
         if value <= cuts[2]: return 4
@@ -141,7 +179,7 @@ def _score_metric(value: Optional[float], metric: str) -> Optional[int]:
         if value >= cuts[0]: return 2
         return 1
 
-def _strategic_recommendation(row: pd.Series) -> Tuple[str, str]:
+def _strategic_recommendation(row: pd.Series, cutoffs: Dict[str, Any], data_incomplete_threshold: float) -> Tuple[str, str]:
     factors = ['profitability_score', 'growth_score', 'reinvestment_score', 'risk_score']
     factor_scores = {f: row.get(f) for f in factors}
     if any(pd.isna(v) for v in factor_scores.values()):
@@ -151,31 +189,31 @@ def _strategic_recommendation(row: pd.Series) -> Tuple[str, str]:
     avg_pg = (row['profitability_score'] + row['growth_score']) / 2
 
     missing_count = sum(pd.isna(row[col]) for col in _RAW_METRICS)
-    data_incomplete = (missing_count / len(_RAW_METRICS)) > 0.25
+    data_incomplete = (missing_count / len(_RAW_METRICS)) > float(data_incomplete_threshold)
 
     total = row['total_score']
     if data_incomplete:
         return "Inconclusive", "More than 25% of input metrics missing."
 
-    if total >= 17:
+    if total >= cutoffs["total_high"]:
         if min_score == 1:
             return "Uneven Fundamentals", "At least one factor score is critically low."
-        if factor_scores['risk_score'] < 2.5:
+        if factor_scores['risk_score'] < cutoffs["risk_low"]:
             return "Uneven Fundamentals", "Risk score below 2.5."
-        if factor_scores['reinvestment_score'] < 2.0:
+        if factor_scores['reinvestment_score'] < cutoffs["reinvest_low"]:
             return "Uneven Fundamentals", "Reinvestment score below 2.0."
-        if avg_pg < 2.5:
+        if avg_pg < cutoffs["avg_pg_low"]:
             return "Uneven Fundamentals", "Weak profitability + growth despite high total."
-        if total >= 18 and all(v >= 4 for v in factor_scores.values()):
+        if total >= cutoffs["elite_total"] and all(v >= cutoffs["elite_min_factor"] for v in factor_scores.values()):
             return "Elite Performer", "Exceptional balance across all four factors."
         return "Resilient Core", "Meets threshold with no red flags."
 
-    if 14 <= total < 17:
-        if factor_scores['risk_score'] < 2.0 or factor_scores['reinvestment_score'] < 2.0:
+    if cutoffs["total_mid_low"] <= total < cutoffs["total_mid_high"]:
+        if factor_scores['risk_score'] < cutoffs["risk_mid_low"] or factor_scores['reinvestment_score'] < cutoffs["reinvest_low"]:
             return "Uneven Fundamentals", "Moderate total but risk/reinvestment weak."
         return "Resilient Core", "Moderate fundamentals with manageable risk."
 
-    if 11 <= total < 14:
+    if cutoffs["total_low"] <= total < cutoffs["total_mid_low"]:
         return "Uneven Fundamentals", "Mixed fundamentals."
 
     return "Weak Fundamentals", "Low total score."
@@ -187,6 +225,7 @@ def compute_fundamentals_actuals(
     save_csv: bool = False,           
     as_df: bool = True,
     basis: Literal["annual","ttm"] = "annual",
+    data_incomplete_threshold: Optional[float] = None,
     analysis_report_date: Optional[str] = None
 ):
     """
@@ -450,7 +489,8 @@ def compute_fundamentals_actuals(
     df = pd.DataFrame(rows)
 
     # Optional data completeness flag, handy for LLM narratives
-    df["data_incomplete"] = df[_RAW_METRICS].isna().sum(axis=1) / len(_RAW_METRICS) > 0.25
+    threshold = DEFAULT_SCORING["data_incomplete_threshold"] if data_incomplete_threshold is None else float(data_incomplete_threshold)
+    df["data_incomplete"] = df[_RAW_METRICS].isna().sum(axis=1) / len(_RAW_METRICS) > threshold
     
     # Apply public-facing labels with correct suffixes (per basis/metric capability)
     public = df.rename(columns=_make_rename_map(basis))    
@@ -467,7 +507,8 @@ def compute_fundamentals_scores(
     analysis_report_date: Optional[str] = None,
     use_timeseries_averages_for_profitability: bool = False, 
     return_timeseries: bool = False,
-    basis: Literal["annual","ttm"] = "annual"
+    basis: Literal["annual","ttm"] = "annual",
+    scoring_overrides: Optional[Dict[str, Any]] = None,
 ):
     """
     Given actuals (DataFrame, list[dict], or list[str]), produce per-metric scores (score_*) and factor rollups.
@@ -539,13 +580,17 @@ def compute_fundamentals_scores(
             if k_df in df.columns:
                 df[k_df] = df["ticker"].map(lambda tt: avg_map.get(tt, {}).get(k_avg, np.nan))
 
+    scoring = _merge_scoring_overrides(scoring_overrides)
+    thresholds = scoring["thresholds"]
+    weights = scoring["weights"]
+
     # Per-metric scores
-    for factor, mweights in _WEIGHTS.items():
+    for factor, mweights in weights.items():
         for metric in mweights:
-            df[f"score_{metric}"] = df[metric].apply(lambda x: _score_metric(x, metric))
+            df[f"score_{metric}"] = df[metric].apply(lambda x: _score_metric(x, metric, thresholds))
 
     # Factor rollups
-    for factor, mweights in _WEIGHTS.items():
+    for factor, mweights in weights.items():
         cols = [f"score_{m}" for m in mweights]
         df[f"{factor}_score"] = df[cols].mul(list(mweights.values()), axis=1).sum(axis=1)
 
@@ -587,22 +632,52 @@ def full_fundamentals_table(
     as_df: bool = True,
     analysis_report_date: Optional[str] = None,
     include_scores_in_actuals: bool = True,
-    basis: Literal["annual","ttm"] = "annual"
+    basis: Literal["annual","ttm"] = "annual",
+    scoring_overrides: Optional[Dict[str, Any]] = None,
 ):
     """
     Convenience orchestrator: actuals → scores → recommendation.
     Returns a single table (actuals + scores + recommendation) by default.
     """
     analysis_report_date = analysis_report_date or _today_iso()
-    actuals = compute_fundamentals_actuals(tickers, output_dir=output_dir, save_csv=save_csv, as_df=True, analysis_report_date=analysis_report_date,basis=basis)
-    scored = compute_fundamentals_scores(actuals, as_df=True, merge_with_actuals=True, analysis_report_date=analysis_report_date,basis=basis) if include_scores_in_actuals \
-        else compute_fundamentals_scores(actuals, as_df=True, merge_with_actuals=False, analysis_report_date=analysis_report_date,basis=basis)
+    scoring = _merge_scoring_overrides(scoring_overrides)
+    actuals = compute_fundamentals_actuals(
+        tickers,
+        output_dir=output_dir,
+        save_csv=save_csv,
+        as_df=True,
+        analysis_report_date=analysis_report_date,
+        basis=basis,
+        data_incomplete_threshold=scoring["data_incomplete_threshold"],
+    )
+    scored = compute_fundamentals_scores(
+        actuals,
+        as_df=True,
+        merge_with_actuals=True,
+        analysis_report_date=analysis_report_date,
+        basis=basis,
+        scoring_overrides=scoring_overrides,
+    ) if include_scores_in_actuals else compute_fundamentals_scores(
+        actuals,
+        as_df=True,
+        merge_with_actuals=False,
+        analysis_report_date=analysis_report_date,
+        basis=basis,
+        scoring_overrides=scoring_overrides,
+    )
 
     df = scored.copy() if include_scores_in_actuals else actuals.merge(scored, on="ticker", how="left")
 
     # Recommendation, dispersion, data flag
     df["factor_dispersion"] = df[["profitability_score","growth_score","reinvestment_score","risk_score"]].std(axis=1)
-    recs = df.apply(lambda r: _strategic_recommendation(r), axis=1)
+    recs = df.apply(
+        lambda r: _strategic_recommendation(
+            r,
+            cutoffs=scoring["recommendation_cutoffs"],
+            data_incomplete_threshold=scoring["data_incomplete_threshold"],
+        ),
+        axis=1,
+    )
     df[["recommendation","comments"]] = pd.DataFrame(recs.tolist(), index=df.index)
 
     # (only if save_csv):

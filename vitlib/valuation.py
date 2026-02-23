@@ -20,6 +20,35 @@ from vitlib.utils import (
     VALUATION_DEFAULTS,
 )
 from vitlib.peers import _pull_company_snapshot
+
+DEFAULT_GUARDRAILS: Dict[str, Any] = {
+    "cost_of_debt_fallback": 0.04,
+    "cost_of_debt_min": 0.02,
+    "cost_of_debt_max": 0.15,
+    "tax_rate_default": 0.21,
+    "tax_rate_cap": 0.35,
+    "fcf_cagr_bounds": (-0.3, 0.3),
+    "rev_cagr_bounds": (-0.3, 0.3),
+    "revenue_cagr_haircut": 0.8,
+    "growth_floor": -0.05,
+    "wacc_spread_low": 0.005,
+    "wacc_spread_high": 0.01,
+    "scenario_growth_multipliers": (0.6, 1.0, 1.3),
+    "ev_fcf_multiple_warn_high": 50.0,
+    "ev_fcf_multiple_warn_low": 5.0,
+    "premium_band_small": 5.0,
+    "premium_band_large": 20.0,
+    "cov_moderate": 0.3,
+}
+
+def _merge_guardrails(overrides: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not overrides:
+        return dict(DEFAULT_GUARDRAILS)
+    merged = dict(DEFAULT_GUARDRAILS)
+    for k, v in overrides.items():
+        if k in merged and v is not None:
+            merged[k] = v
+    return merged
 def _revenue_cagr_from_series(series: pd.Series) -> Optional[float]:
     if isinstance(series, pd.Series) and len(series) >= 2:
         start = _safe_float(series.iloc[-1])
@@ -38,7 +67,13 @@ def _dcf_enterprise_value(fcf: float, g: float, wacc: float, years: int = 5) -> 
     tvd = tv / ((1 + wacc)**years)
     return float(sum(cfs) + tvd)
 
-def _calculate_wacc(snap: Dict[str, Any], risk_free_rate: float, equity_risk_premium: float, beta: float) -> Optional[float]:
+def _calculate_wacc(
+    snap: Dict[str, Any],
+    risk_free_rate: float,
+    equity_risk_premium: float,
+    beta: float,
+    guardrails: Optional[Dict[str, Any]] = None,
+) -> Optional[float]:
     """Calculate proper WACC including debt costs"""
     try:
         # Get balance sheet data
@@ -74,9 +109,10 @@ def _calculate_wacc(snap: Dict[str, Any], risk_free_rate: float, equity_risk_pre
         if 'Interest Expense' in income.index:
             interest_expense = abs(_safe_float(income.loc['Interest Expense'].iloc[0]) or 0)
         
-        cost_of_debt = interest_expense / total_debt if total_debt > 0 else 0.04
-        cost_of_debt = max(cost_of_debt, 0.02)  # Minimum 2%
-        cost_of_debt = min(cost_of_debt, 0.15)  # Maximum 15%
+        guardrails = guardrails or DEFAULT_GUARDRAILS
+        cost_of_debt = interest_expense / total_debt if total_debt > 0 else guardrails["cost_of_debt_fallback"]
+        cost_of_debt = max(cost_of_debt, guardrails["cost_of_debt_min"])
+        cost_of_debt = min(cost_of_debt, guardrails["cost_of_debt_max"])
         
         # Tax rate approximation
         pretax_income = _safe_float(income.loc['Pretax Income'].iloc[0]) if 'Pretax Income' in income.index else None
@@ -84,9 +120,9 @@ def _calculate_wacc(snap: Dict[str, Any], risk_free_rate: float, equity_risk_pre
         
         if _is_pos(pretax_income) and _is_num(net_income):
             tax_rate = max(0, (pretax_income - net_income) / pretax_income)
-            tax_rate = min(tax_rate, 0.35)  # Cap at 35%
+            tax_rate = min(tax_rate, guardrails["tax_rate_cap"])
         else:
-            tax_rate = 0.25  # Default corporate tax rate
+            tax_rate = guardrails["tax_rate_default"]
         
         # Calculate weights
         total_value = market_cap + total_debt
@@ -164,6 +200,7 @@ def dcf_three_scenarios(
     manual_baseline_fcf: Optional[float] = None, # Override FCF baseline (None = calculated)
     manual_growth_rates: Optional[List[float]] = None, # [low, mid, high] growth override
     assumptions_as_of: Optional[str] = None,
+    assumptions_overrides: Optional[Dict[str, Any]] = None,
     
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
@@ -184,12 +221,14 @@ def dcf_three_scenarios(
     analysis_report_date = analysis_report_date or _today_iso()
     t = _sanitize_ticker(ticker)
     snap = _pull_company_snapshot(t)
+    guardrails = _merge_guardrails(assumptions_overrides)
     assumptions_used = valuation_defaults(
         as_of_date=assumptions_as_of or analysis_report_date,
         risk_free_rate=risk_free_rate,
         equity_risk_premium=equity_risk_premium,
         target_cagr_fallback=target_cagr_fallback,
         fcf_window_years=fcf_window_years,
+        terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
     
     # Initialize notes list FIRST
@@ -200,13 +239,13 @@ def dcf_three_scenarios(
         raise ValueError(f"Missing beta from yfinance for {t}. Cannot compute WACC.")
 
     # Calculate proper WACC
-    wacc_mid = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta)
+    wacc_mid = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta, guardrails=guardrails)
     if wacc_mid is None:
         raise ValueError(f"Cannot calculate WACC for {t}. Missing required financial data.")
 
     # CORRECTED: Higher growth should have higher WACC (more risk)
-    wacc_low = wacc_mid - 0.005   # Low growth = lower risk = lower WACC
-    wacc_high = wacc_mid + 0.01   # High growth = higher risk = higher WACC
+    wacc_low = wacc_mid - float(guardrails["wacc_spread_low"])   # Low growth = lower risk = lower WACC
+    wacc_high = wacc_mid + float(guardrails["wacc_spread_high"]) # High growth = higher risk = higher WACC
 
     # UPDATED: Enhanced FCF baseline with window control
     fcf_series = _fcf_series_from_cashflow(snap['cashflow'])
@@ -249,7 +288,8 @@ def dcf_three_scenarios(
                     peer_snap = _pull_company_snapshot(_sanitize_ticker(p))
                     peer_fcf_series = _fcf_series_from_cashflow(peer_snap['cashflow'])
                     c = _fcf_cagr_from_series(peer_fcf_series)
-                    if _is_num(c) and -0.5 <= c <= 0.5:  # Reasonable bounds
+                    lo_b, hi_b = guardrails["fcf_cagr_bounds"]
+                    if _is_num(c) and lo_b <= c <= hi_b:
                         peer_fcf_cagrs.append(float(c))
                 except Exception:
                     continue
@@ -264,24 +304,28 @@ def dcf_three_scenarios(
             notes.append("Growth rates seeded from peer FCF CAGRs")
         else:
             # Use FCF CAGR if available and reasonable, else revenue CAGR, else fallback
-            if _is_num(fcf_cagr_target) and -0.3 <= fcf_cagr_target <= 0.3:
+            lo_b, hi_b = guardrails["fcf_cagr_bounds"]
+            if _is_num(fcf_cagr_target) and lo_b <= fcf_cagr_target <= hi_b:
                 base = fcf_cagr_target
                 notes.append("Growth rates based on target FCF CAGR")
-            elif _is_num(rev_cagr_target) and -0.3 <= rev_cagr_target <= 0.3:
-                base = rev_cagr_target * 0.8  # Conservative adjustment
-                notes.append("Growth rates based on target revenue CAGR (adjusted)")
             else:
-                base = target_cagr_fallback
-                notes.append("Growth rates using fallback assumption")
-            
-            g_low, g_mid, g_high = base * 0.6, base, base * 1.3
+                r_lo_b, r_hi_b = guardrails["rev_cagr_bounds"]
+                if _is_num(rev_cagr_target) and r_lo_b <= rev_cagr_target <= r_hi_b:
+                    base = rev_cagr_target * float(guardrails["revenue_cagr_haircut"])
+                    notes.append("Growth rates based on target revenue CAGR (adjusted)")
+                else:
+                    base = target_cagr_fallback
+                    notes.append("Growth rates using fallback assumption")
+            m_low, m_mid, m_high = guardrails["scenario_growth_multipliers"]
+            g_low, g_mid, g_high = base * m_low, base * m_mid, base * m_high
 
     # Cap growth if it exceeds WACC
     def _cap(g, w): 
         if not _is_num(g) or not _is_num(w):
             return None
         gap = assumptions_used["terminal_growth_gap"]
-        return min(max(g, -0.05), w - gap)  # Also floor at -5%
+        floor = float(guardrails["growth_floor"])
+        return min(max(g, floor), w - gap)
     
     # CORRECTED: Match risk levels properly
     gL = _cap(g_low, wacc_low)      # Low growth, low WACC
@@ -300,9 +344,9 @@ def dcf_three_scenarios(
     # Add reasonableness checks
     if _is_pos(vM) and _is_pos(avg_fcf):
         ev_fcf_multiple = vM / avg_fcf
-        if ev_fcf_multiple > 50:
+        if ev_fcf_multiple > float(guardrails["ev_fcf_multiple_warn_high"]):
             notes.append(f"Warning: EV/FCF multiple of {ev_fcf_multiple:.1f}x seems high; check assumptions.")
-        elif ev_fcf_multiple < 5:
+        elif ev_fcf_multiple < float(guardrails["ev_fcf_multiple_warn_low"]):
             notes.append(f"Note: EV/FCF multiple of {ev_fcf_multiple:.1f}x is relatively low.")
 
     df = pd.DataFrame([
@@ -349,6 +393,7 @@ def _dcf_sensitivity_grid_from_inputs(
     wacc_values: List[float],
     growth_values: List[float],
     terminal_growth_gap: float = VALUATION_DEFAULTS["terminal_growth_gap"],
+    growth_floor: float = DEFAULT_GUARDRAILS["growth_floor"],
 ) -> pd.DataFrame:
     """
     Pure helper for DCF sensitivity tables.
@@ -368,8 +413,8 @@ def _dcf_sensitivity_grid_from_inputs(
 
             if _is_num(g_in) and _is_num(w_in) and _is_pos(avg_fcf) and _is_pos(shares_outstanding) and _is_pos(w_in):
                 g_tmp = float(g_in)
-                if g_tmp < -0.05:
-                    g_tmp = -0.05
+                if g_tmp < growth_floor:
+                    g_tmp = growth_floor
                     g_floored = True
 
                 cap_level = float(w_in) - float(terminal_growth_gap)
@@ -407,6 +452,7 @@ def dcf_sensitivity_grid(
     assumptions_as_of: Optional[str] = None,
     wacc_values: Optional[List[float]] = None,
     growth_values: Optional[List[float]] = None,
+    assumptions_overrides: Optional[Dict[str, Any]] = None,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -423,12 +469,14 @@ def dcf_sensitivity_grid(
     analysis_report_date = analysis_report_date or _today_iso()
     t = _sanitize_ticker(ticker)
     snap = _pull_company_snapshot(t)
+    guardrails = _merge_guardrails(assumptions_overrides)
     assumptions_used = valuation_defaults(
         as_of_date=assumptions_as_of or analysis_report_date,
         risk_free_rate=risk_free_rate,
         equity_risk_premium=equity_risk_premium,
         target_cagr_fallback=target_cagr_fallback,
         fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
+        terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
 
     notes: List[str] = []
@@ -437,7 +485,7 @@ def dcf_sensitivity_grid(
     if beta is None:
         raise ValueError(f"Missing beta from yfinance for {t}. Cannot compute sensitivity WACC baseline.")
 
-    base_wacc = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta)
+    base_wacc = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta, guardrails=guardrails)
     if base_wacc is None:
         base_wacc = risk_free_rate + beta * equity_risk_premium
         notes.append("WACC baseline fell back to cost of equity due to missing debt inputs.")
@@ -460,15 +508,18 @@ def dcf_sensitivity_grid(
     else:
         fcf_cagr = _fcf_cagr_from_series(fcf_series_all)
         rev_cagr = _revenue_cagr_from_series(snap.get("revenue_series"))
-        if _is_num(fcf_cagr) and -0.3 <= fcf_cagr <= 0.3:
+        lo_b, hi_b = guardrails["fcf_cagr_bounds"]
+        if _is_num(fcf_cagr) and lo_b <= fcf_cagr <= hi_b:
             base_g = float(fcf_cagr)
             notes.append("Using historical FCF CAGR as terminal growth baseline.")
-        elif _is_num(rev_cagr) and -0.3 <= rev_cagr <= 0.3:
-            base_g = float(rev_cagr) * 0.8
-            notes.append("Using adjusted historical revenue CAGR as terminal growth baseline.")
         else:
-            base_g = float(target_cagr_fallback)
-            notes.append("Using fallback terminal growth baseline.")
+            r_lo_b, r_hi_b = guardrails["rev_cagr_bounds"]
+            if _is_num(rev_cagr) and r_lo_b <= rev_cagr <= r_hi_b:
+                base_g = float(rev_cagr) * float(guardrails["revenue_cagr_haircut"])
+                notes.append("Using adjusted historical revenue CAGR as terminal growth baseline.")
+            else:
+                base_g = float(target_cagr_fallback)
+                notes.append("Using fallback terminal growth baseline.")
 
     if growth_values is None:
         growth_values = [base_g - 0.02, base_g - 0.01, base_g, base_g + 0.01, base_g + 0.02]
@@ -493,6 +544,7 @@ def dcf_sensitivity_grid(
         wacc_values=wacc_values,
         growth_values=growth_values,
         terminal_growth_gap=assumptions_used["terminal_growth_gap"],
+        growth_floor=float(guardrails["growth_floor"]),
     )
 
     grid_wide = (
@@ -509,7 +561,7 @@ def dcf_sensitivity_grid(
     if capped_cells:
         notes.append(f"{capped_cells} grid cells had growth capped at WACC - {assumptions_used['terminal_growth_gap']:.1%}.")
     if floored_cells:
-        notes.append(f"{floored_cells} grid cells had growth floored at -5.0%.")
+        notes.append(f"{floored_cells} grid cells had growth floored at {float(guardrails['growth_floor']):.1%}.")
 
     out = {
         "ticker": t,
@@ -552,6 +604,7 @@ def dcf_implied_enterprise_value(
     use_average_fcf_years: Optional[int] = VALUATION_DEFAULTS["fcf_window_years"],   # None -> use ALL available FCF points
     volatility_threshold: float = 0.5,       # coefficient of variation threshold for a volatility note
     assumptions_as_of: Optional[str] = None,
+    assumptions_overrides: Optional[Dict[str, Any]] = None,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
 ):
@@ -576,12 +629,14 @@ def dcf_implied_enterprise_value(
     analysis_report_date = analysis_report_date or _today_iso()
     t = _sanitize_ticker(ticker)
     snap = _pull_company_snapshot(t)
+    guardrails = _merge_guardrails(assumptions_overrides)
     assumptions_used = valuation_defaults(
         as_of_date=assumptions_as_of or analysis_report_date,
         risk_free_rate=risk_free_rate,
         equity_risk_premium=equity_risk_premium,
         target_cagr_fallback=target_cagr_fallback,
         fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
+        terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
 
     # --- IMPROVED: Calculate proper WACC ---
@@ -590,7 +645,7 @@ def dcf_implied_enterprise_value(
         raise ValueError(f"Missing beta from yfinance for {t}. Cannot compute WACC.")
     
     # Use the improved WACC calculation
-    wacc = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta)
+    wacc = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta, guardrails=guardrails)
     used_cost_of_equity_fallback = False
     if wacc is None:
         # Fallback to cost of equity if WACC calculation fails
@@ -643,7 +698,7 @@ def dcf_implied_enterprise_value(
         if cov > volatility_threshold:
             notes.append(f"Historical FCF highly volatile (CoV={cov:.2f} > threshold {volatility_threshold:.2f}); consider shortening averaging window.")
             confidence_flags["high_fcf_volatility"] = True
-        elif cov > 0.3:
+        elif cov > float(guardrails["cov_moderate"]):
             notes.append(f"Historical FCF moderately volatile (CoV={cov:.2f}).")
             confidence_flags["moderate_fcf_volatility"] = True
 
@@ -670,17 +725,20 @@ def dcf_implied_enterprise_value(
         fcf_cagr = _fcf_cagr_from_series(fcf_series_all)
         rev_cagr = _revenue_cagr_from_series(snap.get('revenue_series'))
         
-        if _is_num(fcf_cagr) and -0.3 <= fcf_cagr <= 0.3:
+        lo_b, hi_b = guardrails["fcf_cagr_bounds"]
+        if _is_num(fcf_cagr) and lo_b <= fcf_cagr <= hi_b:
             g = fcf_cagr
             notes.append("Using historical FCF CAGR for growth.")
-        elif _is_num(rev_cagr) and -0.3 <= rev_cagr <= 0.3:
-            g = rev_cagr * 0.8  # Conservative adjustment
-            notes.append("Using historical revenue CAGR (adjusted) for growth.")
-            confidence_flags["used_revenue_growth_proxy"] = True
         else:
-            g = target_cagr_fallback
-            notes.append("Using fallback growth rate.")
-            confidence_flags["used_fallback_growth"] = True
+            r_lo_b, r_hi_b = guardrails["rev_cagr_bounds"]
+            if _is_num(rev_cagr) and r_lo_b <= rev_cagr <= r_hi_b:
+                g = rev_cagr * float(guardrails["revenue_cagr_haircut"])
+                notes.append("Using historical revenue CAGR (adjusted) for growth.")
+                confidence_flags["used_revenue_growth_proxy"] = True
+            else:
+                g = target_cagr_fallback
+                notes.append("Using fallback growth rate.")
+                confidence_flags["used_fallback_growth"] = True
 
     # Guardrail: cap g slightly below WACC to avoid division by zero in TV
     capped = False
@@ -690,9 +748,10 @@ def dcf_implied_enterprise_value(
         capped = True
 
     # Additional validation for negative growth
-    if g is not None and g < -0.05:
-        g = max(g, -0.05)  # Floor at -5%
-        notes.append("Growth rate floored at -5% for stability.")
+    floor = float(guardrails["growth_floor"])
+    if g is not None and g < floor:
+        g = max(g, floor)
+        notes.append(f"Growth rate floored at {floor:.1%} for stability.")
         confidence_flags["growth_floored"] = True
 
     # Compute EV depending on mode
@@ -707,16 +766,16 @@ def dcf_implied_enterprise_value(
         years_used = int(years)
 
     if capped:
-        notes.append(f"Growth capped from {original_g:.1%} to {g:.1%} (WACC - 0.5%) to stabilize terminal value.")
+        notes.append(f"Growth capped from {original_g:.1%} to {g:.1%} (WACC - {assumptions_used['terminal_growth_gap']:.1%}) to stabilize terminal value.")
         confidence_flags["growth_capped"] = True
 
     # Add reasonableness checks
     if _is_pos(ev) and _is_pos(avg_fcf):
         ev_fcf_multiple = ev / avg_fcf
-        if ev_fcf_multiple > 50:
+        if ev_fcf_multiple > float(guardrails["ev_fcf_multiple_warn_high"]):
             notes.append(f"Warning: EV/FCF multiple of {ev_fcf_multiple:.1f}x seems high; check assumptions.")
             confidence_flags["extreme_ev_fcf_multiple"] = True
-        elif ev_fcf_multiple < 5:
+        elif ev_fcf_multiple < float(guardrails["ev_fcf_multiple_warn_low"]):
             notes.append(f"Note: EV/FCF multiple of {ev_fcf_multiple:.1f}x is relatively low.")
             confidence_flags["extreme_ev_fcf_multiple"] = True
 
@@ -750,6 +809,7 @@ def compare_to_market_ev(
     use_average_fcf_years: int | None = VALUATION_DEFAULTS["fcf_window_years"],
     volatility_threshold: float = 0.5,
     assumptions_as_of: Optional[str] = None,
+    assumptions_overrides: Optional[Dict[str, Any]] = None,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
 ):
@@ -773,6 +833,7 @@ def compare_to_market_ev(
     t = _sanitize_ticker(ticker)
 
     # Get implied EV using improved function
+    guardrails = _merge_guardrails(assumptions_overrides)
     implied_df = dcf_implied_enterprise_value(
         t,
         years=years,
@@ -783,6 +844,7 @@ def compare_to_market_ev(
         use_average_fcf_years=use_average_fcf_years,
         volatility_threshold=volatility_threshold,
         assumptions_as_of=assumptions_as_of,
+        assumptions_overrides=assumptions_overrides,
         as_df=True,
         analysis_report_date=analysis_report_date
     )
@@ -798,6 +860,7 @@ def compare_to_market_ev(
         equity_risk_premium=equity_risk_premium,
         target_cagr_fallback=target_cagr_fallback,
         fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
+        terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
     base_notes = implied_df.loc[0, "Notes"] or ""
     upstream_conf = implied_df.loc[0, "Valuation_Confidence"] if "Valuation_Confidence" in implied_df.columns else None
@@ -841,13 +904,13 @@ def compare_to_market_ev(
             premium_pct = (observed_ev / implied_ev - 1.0) * 100
             
             # IMPROVED: More nuanced interpretation
-            if abs(premium_pct) < 5:
+            if abs(premium_pct) < float(guardrails["premium_band_small"]):
                 notes.append("Observed EV roughly equals DCF-implied EV (within 5%).")
-            elif premium_pct > 20:
+            elif premium_pct > float(guardrails["premium_band_large"]):
                 notes.append("Observed EV significantly above DCF-implied EV (>20% premium); market expects higher growth or lower risk.")
             elif premium_pct > 0:
                 notes.append("Observed EV modestly above DCF-implied EV (positive premium).")
-            elif premium_pct < -20:
+            elif premium_pct < -float(guardrails["premium_band_large"]):
                 notes.append("Observed EV significantly below DCF-implied EV (>20% discount); potential undervaluation or market expects lower growth.")
             else:
                 notes.append("Observed EV modestly below DCF-implied EV (negative premium).")
@@ -1001,6 +1064,7 @@ def compare_to_market_cap(
     use_average_fcf_years: int | None = VALUATION_DEFAULTS["fcf_window_years"],
     volatility_threshold: float = 0.5,
     assumptions_as_of: Optional[str] = None,
+    assumptions_overrides: Optional[Dict[str, Any]] = None,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None
 ):
@@ -1038,6 +1102,7 @@ def compare_to_market_cap(
             use_average_fcf_years=use_average_fcf_years,
             volatility_threshold=volatility_threshold,
             assumptions_as_of=assumptions_as_of,
+            assumptions_overrides=assumptions_overrides,
             as_df=True,
             analysis_report_date=analysis_report_date
         )
@@ -1048,12 +1113,14 @@ def compare_to_market_cap(
     g_used = ev_df.iloc[0].get("Growth_Used")
     wacc_used = ev_df.iloc[0].get("WACC_Used")
     years_used = int(ev_df.iloc[0].get("Years"))
+    guardrails = _merge_guardrails(assumptions_overrides)
     assumptions_used = ev_df.iloc[0].get("Assumptions_Used") if "Assumptions_Used" in ev_df.columns else valuation_defaults(
         as_of_date=assumptions_as_of or analysis_report_date,
         risk_free_rate=risk_free_rate,
         equity_risk_premium=equity_risk_premium,
         target_cagr_fallback=target_cagr_fallback,
         fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
+        terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
     base_notes = str(ev_df.iloc[0].get("Notes") or "")
     upstream_conf = ev_df.iloc[0].get("Valuation_Confidence") if "Valuation_Confidence" in ev_df.columns else None
@@ -1106,13 +1173,13 @@ def compare_to_market_cap(
     else:
         premium_pct = (observed_mktcap / equity_implied - 1.0) * 100.0
         # brief interpretation
-        if abs(premium_pct) < 5:
+        if abs(premium_pct) < float(guardrails["premium_band_small"]):
             notes.append("Observed Market Cap ≈ Implied Equity (within 5%).")
-        elif premium_pct > 20:
+        elif premium_pct > float(guardrails["premium_band_large"]):
             notes.append("Market Cap materially above Implied Equity (>20% premium).")
         elif premium_pct > 0:
             notes.append("Market Cap modestly above Implied Equity (positive premium).")
-        elif premium_pct < -20:
+        elif premium_pct < -float(guardrails["premium_band_large"]):
             notes.append("Market Cap materially below Implied Equity (<-20% premium).")
         else:
             notes.append("Market Cap modestly below Implied Equity (negative premium).")

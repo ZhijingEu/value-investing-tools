@@ -17,6 +17,33 @@ from vitlib.utils import (
     to_records,
 )
 from vitlib.fundamentals import compute_fundamentals_actuals
+
+DEFAULT_PEER_DIAGNOSTICS: Dict[str, Any] = {
+    "coverage_warn_threshold": 0.60,
+    "metric_specs": [
+        ("market_cap", "Market Cap", "size", "ratio_p75_p25", 5.0),
+        ("revenue", "Revenue", "size", "ratio_p75_p25", 5.0),
+        ("revenue_growth", "Revenue Growth (YoY)", "growth", "iqr", 0.15),
+        ("earnings_growth", "Earnings Growth (YoY)", "growth", "iqr", 0.20),
+        ("operating_margin", "Operating Margin", "margin", "iqr", 0.10),
+        ("ebitda_margin_calc", "EBITDA Margin (calc)", "margin", "iqr", 0.12),
+        ("debt_to_equity_info", "Debt/Equity (provider)", "leverage", "iqr", 100.0),
+        ("beta", "Beta", "risk", "iqr", 0.6),
+    ],
+}
+
+def _merge_peer_diagnostics_overrides(overrides: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not overrides:
+        return DEFAULT_PEER_DIAGNOSTICS
+    merged = {
+        "coverage_warn_threshold": DEFAULT_PEER_DIAGNOSTICS["coverage_warn_threshold"],
+        "metric_specs": DEFAULT_PEER_DIAGNOSTICS["metric_specs"],
+    }
+    if overrides.get("coverage_warn_threshold") is not None:
+        merged["coverage_warn_threshold"] = overrides["coverage_warn_threshold"]
+    if overrides.get("metric_specs") is not None:
+        merged["metric_specs"] = overrides["metric_specs"]
+    return merged
 # --- new internal, extended helper used by other functions ---
 def _price_snapshots_ext(ticker: str) -> dict:
     t = _sanitize_ticker(ticker)
@@ -117,6 +144,7 @@ def peer_multiples(
     target_ticker: Optional[str] = None,
     include_target: bool = False,
     multiple_basis: Literal["ttm", "forward_pe"] = "ttm",
+    diagnostics_overrides: Optional[Dict[str, Any]] = None,
     as_df: bool = True,
     analysis_report_date: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -253,7 +281,8 @@ def peer_multiples(
 
     # --- (0) Peer comparability diagnostics (coverage + dispersion checks) ---
     def _peer_quality_diagnostics(df: pd.DataFrame) -> Dict[str, Any]:
-        coverage_warn_threshold = 0.60
+        diagnostics = _merge_peer_diagnostics_overrides(diagnostics_overrides)
+        coverage_warn_threshold = diagnostics["coverage_warn_threshold"]
         warnings: List[str] = []
         metrics_out: List[Dict[str, Any]] = []
 
@@ -273,16 +302,7 @@ def peer_multiples(
             with np.errstate(divide="ignore", invalid="ignore"):
                 work["ebitda_margin_calc"] = np.where((r > 0) & np.isfinite(e), e / r, np.nan)
 
-        metric_specs = [
-            ("market_cap", "Market Cap", "size", "ratio_p75_p25", 5.0),
-            ("revenue", "Revenue", "size", "ratio_p75_p25", 5.0),
-            ("revenue_growth", "Revenue Growth (YoY)", "growth", "iqr", 0.15),
-            ("earnings_growth", "Earnings Growth (YoY)", "growth", "iqr", 0.20),
-            ("operating_margin", "Operating Margin", "margin", "iqr", 0.10),
-            ("ebitda_margin_calc", "EBITDA Margin (calc)", "margin", "iqr", 0.12),
-            ("debt_to_equity_info", "Debt/Equity (provider)", "leverage", "iqr", 100.0),
-            ("beta", "Beta", "risk", "iqr", 0.6),
-        ]
+        metric_specs = diagnostics["metric_specs"]
 
         for col, label, category, rule_type, threshold in metric_specs:
             if col not in work.columns:
