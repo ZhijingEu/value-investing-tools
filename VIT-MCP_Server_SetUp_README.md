@@ -1,10 +1,10 @@
-# Value Investing Tools — MCP Server Guide (Claude Desktop)
+# Value Investing Tools — MCP Server Guide (STDIO MCP)
 
-This repo ships with a local Model Context Protocol (MCP) server that exposes a curated subset of vit functions as Claude Desktop tools. It's designed for local use over STDIO, produces file URIs for artifacts (PNGs/CSVs/XLSX), and leaves the full Python API available to notebooks via `import vit`.
+This repo ships with a local Model Context Protocol (MCP) server that exposes a curated subset of VIT functions over STDIO. It works with Claude Desktop, Codex, and other MCP-capable clients. The server produces file URIs for artifacts (PNGs/CSVs/XLSX) and leaves the full Python API available via `import vit`.
 
 **Note:** The long-running orchestrator function is intentionally not exposed as an MCP tool. Use the granular tools below or the Python API.
 
-Inline chart rendering from the Value-Investing MCP tools is currently unreliable in some clients (including Claude Desktop). A fix is in progress.  
+Inline chart rendering from the Value-Investing MCP tools is currently unreliable in some clients (including Claude Desktop).  
 Plots **are still generated** and written as PNGs to your configured output folder (`VIT_OUTPUT_DIR`, e.g., `./output/<TICKER>/…`). In this state, the image may not appear inline in the chat even though the tool returns it.
 
 **Workarounds (until the patch lands):**
@@ -41,6 +41,7 @@ Thanks for your patience while we ship a proper inline-image fix.
 - `price_from_peer_multiples` — implied per-share P25/P50/P75 from peer bands.
 - `compare_to_market_ev` — implied EV vs observed EV.
 - `compare_to_market_cap` — implied equity value vs observed market cap.
+- `dcf_sensitivity_grid` — WACC x terminal growth sensitivity grid (wide + long).
 
 ### Health
 
@@ -63,6 +64,9 @@ pip install -r requirements.txt
 
 # 4) quick import sanity check
 python -c "import vit; print('vit OK:', hasattr(vit, 'compute_fundamentals_actuals'))"
+
+# 5) quick data sanity check (non-MCP)
+python -c "import ValueInvestingTools as vit; print(vit.fundamentals_ttm_vs_average('MSFT').head())"
 ```
 
 ### Optional (versioned filename)
@@ -70,7 +74,7 @@ python -c "import vit; print('vit OK:', hasattr(vit, 'compute_fundamentals_actua
 If you keep a versioned library filename, set an env var so vit finds it:
 
 ```powershell
-$env:VIT_LIB_BASENAME="ValueInvestingTools_Rev49.1.py"
+$env:VIT_LIB_BASENAME="ValueInvestingTools.py"
 ```
 
 (Alternatively, rename the file to `ValueInvestingTools.py` — the wrapper looks for both.)
@@ -89,7 +93,7 @@ Open **Settings → Developer → Local MCP Servers** and add one of the two con
       "args": ["C:\\Users\\<yourUserName>\\OneDrive\\Desktop\\MCP_Servers\\value-investing-tools-mcp\\server.py"],
       "env": {
         "VIT_OUTPUT_DIR": "C:\\Users\\<yourUserName>\\OneDrive\\Desktop\\MCP_Servers\\value-investing-tools-mcp\\output",
-        "VIT_LIB_BASENAME": "ValueInvestingTools_Rev49.1.py",
+        "VIT_LIB_BASENAME": "ValueInvestingTools.py",
         "INLINE_IMAGES": "0"
       }
     }
@@ -116,17 +120,29 @@ Open **Settings → Developer → Local MCP Servers** and add one of the two con
   }
 }
 ```
-Note : :INLINE IMAGES : 1 tells the server to include a base64 image item in addition to the file URI. If you prefer to save the file only set it to 0
+Note: `INLINE_IMAGES=1` tells the server to include a base64 image item in addition to the file URI. If you prefer file-only artifacts set it to `0`.
 
 After saving, fully quit and relaunch Claude Desktop so it reloads the local servers.
 
 ## How it works (I/O & artifacts)
 
-- **Transport:** STDIO (Claude launches the process and speaks MCP over stdin/stdout).
+- **Transport:** STDIO (clients launch the process and speak MCP over stdin/stdout).
 - **Images:** plotting tools save PNGs to `./output/<TICKER>/…` and return absolute file URIs (`file:///C:/…`) so Claude can display them inline.
 - **Tables:** data tools return JSON in chat; many also write CSV and attach them as resources.
 - **Excel:** when produced (e.g., health reports), a file resource to `.xlsx` is returned.
 - **Matplotlib:** the server selects the headless backend (Agg) so charts render without a display.
+
+## Other MCP clients (non-Claude)
+
+Any MCP-capable client that can launch a local STDIO server can use this tool. The only requirement is a command+args configuration equivalent to:
+
+```bash
+<python> server.py
+```
+
+You may also set:
+- `VIT_OUTPUT_DIR` to control artifact location.
+- `VIT_LIB_BASENAME` if you renamed the library file.
 
 ## Natural-language starter prompts
 

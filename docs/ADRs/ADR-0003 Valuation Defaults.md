@@ -1,11 +1,11 @@
-# ADR-0003: Valuation Defaults – ERP, Fallback Growth, and FCF Window
+# ADR-0003: Valuation Defaults - ERP, Fallback Growth, and FCF Window
 
 ## Status
 Proposed (Draft)
 
 ## Context
-Valuation calculations within the Value Investing Tools library — particularly  
-`compare_to_market_ev()`, `compare_to_market_cap()`, and `dcf_three_scenarios()` —  
+Valuation calculations within the Value Investing Tools library - particularly  
+`compare_to_market_ev()`, `compare_to_market_cap()`, and `dcf_three_scenarios()` -  
 require several key parameters that materially affect output:
 
 - **Equity Risk Premium (ERP)**  
@@ -26,13 +26,13 @@ Defaults are fixed in code but can be overridden via function arguments.
 
 | Parameter | Default | Description | Rationale |
 |------------|----------|-------------|------------|
-| **Risk-Free Rate** | 4.5 % | Long-term yield on 10-year US Treasuries (approx. 2020-2025 mean). | Anchors discount rate baseline. |
-| **Equity Risk Premium (ERP)** | 5.5 – 6.0 % | Implied excess return required by equity investors. | Aligns with long-run historical average (Damodaran 2024). |
+| **Risk-Free Rate** | 4.18 % | 10-year US Treasury yield (Damodaran Jan 1, 2026 reference). | Anchors discount rate baseline. |
+| **Equity Risk Premium (ERP)** | 4.23 % | Implied excess return required by equity investors. | Based on Damodaran implied ERP (Jan 1, 2026). |
 | **Fallback Growth Rate (g)** | 2.0 % | Used when terminal or forecast growth data are unavailable. | Approximates long-term real GDP growth. |
-| **FCF Averaging Window** | 3 years | Period over which historical free cash flows are averaged. | Smooths volatility given yfinance’s 4-year data limit. |
+| **FCF Averaging Window** | 3 years | Period over which historical free cash flows are averaged. | Smooths volatility given yfinance's 4-year data limit. |
 
 **Discount Rate (WACC)** is derived as  
-`WACC = Risk-Free + Beta × ERP + Cost of Debt × (1 – TaxRate)`  
+`WACC = Risk-Free + Beta x ERP + Cost of Debt x (1 - TaxRate)`  
 using these defaults when specific inputs are absent.
 
 ---
@@ -41,8 +41,8 @@ using these defaults when specific inputs are absent.
 - Embed these defaults in all valuation-related functions as keyword arguments:  
   ```python
   def dcf_three_scenarios(...,
-      risk_free_rate: float = 0.045,
-      equity_risk_premium: float = 0.055,
+      risk_free_rate: float = 0.0418,
+      equity_risk_premium: float = 0.0423,
       fallback_growth: float = 0.02,
       fcf_years: int = 3,
       ...
@@ -58,13 +58,13 @@ using these defaults when specific inputs are absent.
 ## Alternatives Considered
 
 - Dynamic ERP via API or market data.
-- Rejected — adds dependencies and instability; project aims for reproducibility.
+- Rejected - adds dependencies and instability; project aims for reproducibility.
 
 - No central defaults (manual each run).
-- Rejected — increases user error and inconsistency.
+- Rejected - increases user error and inconsistency.
 
 - Aggressive (growth-tilted) defaults.
-- Rejected — violates conservative valuation ethos.
+- Rejected - violates conservative valuation ethos.
 
 ---
 
@@ -77,5 +77,5 @@ using these defaults when specific inputs are absent.
 ---
 
 ## References
-- Aswath Damodaran, “Equity Risk Premiums (ERP): Determinants, Estimation, and Implications,” Stern School, 2024.
+- Aswath Damodaran, implied ERP update (Jan 1, 2026).
 - McKinsey & Co., Valuation: Measuring and Managing the Value of Companies, 8th ed., 2020.

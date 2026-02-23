@@ -122,3 +122,16 @@ It complements the ADRs and ROADMAP, providing context for key changes, rational
   - Reference to applicable ADR.  
 - For dependencies: prefer code adaptation with attribution over new package imports.  
 - Keep all plots deterministic (seeded) for reproducibility.
+
+---
+
+## 2026-02-23 — Sprint 4/5/6 Summary
+- **Sprint 4 (Methodology alignment)**:
+  - Added terminal-growth cap mode tied to risk-free rate (+ spread) for stable-growth consistency.
+  - Added per-share peer inputs (`eps_ttm`, `revenue_per_share_ttm`) to reduce empty bands.
+  - Updated assumptions rationale to document new guardrail keys.
+- **Sprint 5 (Provider + caching)**:
+  - Routed runtime data fetches through `providers/` adapter.
+  - Added in-process caching for ticker objects and common datasets.
+- **Sprint 6 (Usability)**:
+  - Added “Minimum Viable Run” to README and MCP setup guide.

@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "value-investing-tools-local": {
+      "command": "C:\\Users\\<yourUserName>\\OneDrive\\Desktop\\MCP_Servers\\value-investing-tools-mcp\\.venv\\Scripts\\python.exe",
+      "args": [
+        "server.py"
+      ],
+      "cwd": "C:\\Users\\<yourUserName>\\OneDrive\\Desktop\\MCP_Servers\\value-investing-tools-mcp",
+      "env": {
+        "VIT_OUTPUT_DIR": "C:\\Users\\<yourUserName>\\OneDrive\\Desktop\\MCP_Servers\\value-investing-tools-mcp\\output",
+        "VIT_LIB_BASENAME": "ValueInvestingTools.py",
+        "INLINE_IMAGES": "1",
+        "INLINE_IMAGE_MAX_BYTES": "2000000"
+      }
+    }
+  }
+}

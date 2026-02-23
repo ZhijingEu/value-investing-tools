@@ -156,8 +156,8 @@ def tool_hist_growth(tickers: Union[str, List[str]], min_years: int=3, analysis_
 # Fundamentals
 # ============================
 @app.tool(name="compute_fundamentals_actuals", description="Compute fundamentals (absolute) for tickers.")
-def tool_compute_actuals(tickers: List[str], basis: Literal["annual","ttm"]="annual", save_csv: bool=False, analysis_report_date: Optional[str]=None):
-    df = vit.compute_fundamentals_actuals(tickers, basis=basis, save_csv=False, as_df=True, analysis_report_date=analysis_report_date)
+def tool_compute_actuals(tickers: List[str], basis: Literal["annual","ttm"]="annual", save_csv: bool=False, analysis_report_date: Optional[str]=None, data_incomplete_threshold: Optional[float]=None):
+    df = vit.compute_fundamentals_actuals(tickers, basis=basis, save_csv=False, as_df=True, analysis_report_date=analysis_report_date, data_incomplete_threshold=data_incomplete_threshold)
     content = [text_item(f"Fundamentals actuals for {', '.join(tickers)} (basis={basis})")]
     content.append(text_item(json.dumps(to_records_df(df), indent=2)))
     if save_csv:
@@ -168,11 +168,11 @@ def tool_compute_actuals(tickers: List[str], basis: Literal["annual","ttm"]="ann
     return content
 
 @app.tool(name="compute_fundamentals_scores", description="Score fundamentals for tickers (or merge with given actuals).")
-def tool_compute_scores(tickers: Optional[List[str]]=None, basis: Literal["annual","ttm"]="annual", merge_with_actuals: bool=False, analysis_report_date: Optional[str]=None):
+def tool_compute_scores(tickers: Optional[List[str]]=None, basis: Literal["annual","ttm"]="annual", merge_with_actuals: bool=False, analysis_report_date: Optional[str]=None, scoring_overrides: Optional[Dict[str, Any]]=None):
     # For MCP ergonomics we take 'tickers'; library supports DF/list/strings
     if not tickers:
         raise ValueError("Please provide tickers (list[str]).")
-    scores = vit.compute_fundamentals_scores(tickers, basis=basis, merge_with_actuals=merge_with_actuals, as_df=True, analysis_report_date=analysis_report_date)
+    scores = vit.compute_fundamentals_scores(tickers, basis=basis, merge_with_actuals=merge_with_actuals, as_df=True, analysis_report_date=analysis_report_date, scoring_overrides=scoring_overrides)
     content = [text_item(f"Fundamentals scores for {', '.join(tickers)} (basis={basis}, merge={merge_with_actuals})")]
     content.append(text_item(json.dumps(to_records_df(scores), indent=2)))
     return content
@@ -218,8 +218,8 @@ def tool_plot_scores_clustered(tickers: List[str], basis: Literal["annual","ttm"
 # Market Comparison (Price-to-X ratios)
 # ============================
 @app.tool(name="peer_multiples", description="Build peer multiples & valuation bands for a peer set (requires target_ticker).")
-def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: bool=False, analysis_report_date: Optional[str]=None):
-    res = vit.peer_multiples(tickers, target_ticker=target_ticker, include_target=include_target, as_df=True, analysis_report_date=analysis_report_date)
+def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: bool=False, multiple_basis: Literal["ttm","forward_pe"]="ttm", analysis_report_date: Optional[str]=None, diagnostics_overrides: Optional[Dict[str, Any]]=None):
+    res = vit.peer_multiples(tickers, target_ticker=target_ticker, include_target=include_target, multiple_basis=multiple_basis, diagnostics_overrides=diagnostics_overrides, as_df=True, analysis_report_date=analysis_report_date)
     pcd = res["peer_comp_detail"]; bands_wide = res["peer_multiple_bands_wide"]; comp_bands = res["peer_comp_bands"]
     # Write CSVs
     base = ticker_dir(target_ticker)
@@ -227,7 +227,7 @@ def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: 
     uri2 = write_df_csv(bands_wide, base / f"peer_multiple_bands_wide_{target_ticker}.csv")
     uri3 = write_df_csv(comp_bands, base / f"peer_comp_bands_{target_ticker}.csv")
     # Also return a compact JSON
-    content = [text_item(f"Peer multiples for target={target_ticker} (peers={', '.join(tickers)})")]
+    content = [text_item(f"Peer multiples for target={target_ticker} (peers={', '.join(tickers)}, multiple_basis={multiple_basis})")]
     content.extend([
         file_resource(uri1, "text/csv"),
         file_resource(uri2, "text/csv"),
@@ -238,6 +238,10 @@ def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: 
     # Return the full dict structure too (as text) so it can be piped into price_from_peer_multiples if needed
     content.append(text_item(json.dumps({
         "target_ticker": res.get("target_ticker"),
+        "multiple_basis": res.get("multiple_basis"),
+        "metric_basis_map": res.get("metric_basis_map"),
+        "notes": res.get("notes"),
+        "peer_quality_diagnostics": res.get("peer_quality_diagnostics"),
         "peer_comp_detail": to_records_df(pcd),
         "peer_multiple_bands_wide": json.loads(bands_wide.to_json()),
         "peer_comp_bands": to_records_df(comp_bands)
@@ -245,11 +249,11 @@ def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: 
     return content
 
 @app.tool(name="price_from_peer_multiples", description="Compute implied per-share price bands (P25/P50/P75) from peer_multiples output.")
-def tool_price_from_peer_multiples(peer_multiples_json: Optional[Dict[str, Any]]=None, tickers: Optional[List[str]]=None, target_ticker: Optional[str]=None, include_target: bool=False, analysis_report_date: Optional[str]=None, save_csv: bool=False):
+def tool_price_from_peer_multiples(peer_multiples_json: Optional[Dict[str, Any]]=None, tickers: Optional[List[str]]=None, target_ticker: Optional[str]=None, include_target: bool=False, multiple_basis: Literal["ttm","forward_pe"]="ttm", analysis_report_date: Optional[str]=None, save_csv: bool=False):
     if peer_multiples_json is None:
         if not (tickers and target_ticker):
             raise ValueError("Provide either peer_multiples_json OR (tickers + target_ticker).")
-        pm = vit.peer_multiples(tickers, target_ticker=target_ticker, include_target=include_target, as_df=True, analysis_report_date=analysis_report_date)
+        pm = vit.peer_multiples(tickers, target_ticker=target_ticker, include_target=include_target, multiple_basis=multiple_basis, as_df=True, analysis_report_date=analysis_report_date)
     else:
         pm = peer_multiples_json
     out_df = vit.price_from_peer_multiples(pm, ticker=target_ticker, analysis_report_date=analysis_report_date, save_csv=False, as_df=True)
@@ -261,9 +265,9 @@ def tool_price_from_peer_multiples(peer_multiples_json: Optional[Dict[str, Any]]
     return content
 
 @app.tool(name="plot_peer_metric_boxplot", description="Boxplot of peer metric (PE|PS|EV_EBITDA) with target overlay; returns PNG.")
-def tool_plot_peer_metric_boxplot(tickers: List[str], target_ticker: str, metric: Literal["PE","PS","EV_EBITDA"]="PE", include_target_in_stats: bool=False):
+def tool_plot_peer_metric_boxplot(tickers: List[str], target_ticker: str, metric: Literal["PE","PS","EV_EBITDA"]="PE", include_target_in_stats: bool=False, multiple_basis: Literal["ttm","forward_pe"]="ttm"):
     peers_all = sorted({target_ticker.upper(), *(t.upper() for t in tickers)})
-    pm = vit.peer_multiples(peers_all, target_ticker=target_ticker, include_target=include_target_in_stats, as_df=True)
+    pm = vit.peer_multiples(peers_all, target_ticker=target_ticker, include_target=include_target_in_stats, multiple_basis=multiple_basis, as_df=True)
     pcd = pm["peer_comp_detail"]; bands = pm["peer_multiple_bands_wide"]
     out = ticker_dir(target_ticker) / f"peer_{metric}_box.png"
     vit.plot_peer_metric_boxplot(peer_comp_detail=pcd, peer_multiple_bands_wide=bands, metric=metric, target_ticker=target_ticker, include_target_in_stats=include_target_in_stats, save_path=str(out))
@@ -274,16 +278,16 @@ def tool_plot_peer_metric_boxplot(tickers: List[str], target_ticker: str, metric
 # EV / Market Cap
 # ============================
 @app.tool(name="compare_to_market_ev", description="Compute implied EV vs observed enterpriseValue from Yahoo.")
-def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5):
-    df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+    df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
 @app.tool(name="plot_ev_observed_vs_implied", description="Plot observed EV vs implied EV (expects output from compare_to_market_ev); returns PNG.")
-def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5):
+def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     if ev_df_json is None:
         if not ticker:
             raise ValueError("Provide either ev_df_json OR ticker.")
-        ev_df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+        ev_df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     else:
         import pandas as pd
         ev_df = pd.DataFrame(ev_df_json)
@@ -294,23 +298,23 @@ def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Opt
     return image_items_for_png(out)
 
 @app.tool(name="compare_to_market_cap", description="Compare implied EQUITY VALUE vs observed MARKET CAP (Yahoo).")
-def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]], years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5):
+def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]], years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     # Accept a ticker string OR an ev_df_json (list[dict]) from compare_to_market_ev
     import pandas as pd
     if isinstance(ticker_or_evdf, str):
-        df = vit.compare_to_market_cap(ticker_or_evdf, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+        df = vit.compare_to_market_cap(ticker_or_evdf, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     else:
         ev_df = pd.DataFrame(ticker_or_evdf)
-        df = vit.compare_to_market_cap(ev_df, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+        df = vit.compare_to_market_cap(ev_df, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
 @app.tool(name="plot_market_cap_observed_vs_implied_equity_val", description="Plot observed Market Cap vs implied Equity Value; returns PNG.")
-def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5):
+def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     import pandas as pd
     if evcap_df_json is None:
         if not ticker:
             raise ValueError("Provide either evcap_df_json OR ticker.")
-        evcap_df = vit.compare_to_market_cap(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, as_df=True)
+        evcap_df = vit.compare_to_market_cap(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     else:
         evcap_df = pd.DataFrame(evcap_df_json)
     t = ticker or (evcap_df["ticker"].iloc[0] if "ticker" in evcap_df.columns else "TICKER")
@@ -323,14 +327,63 @@ def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json
 # DCF
 # ============================
 @app.tool(name="dcf_three_scenarios", description="Compute Low/Mid/High per-share DCF for a ticker.")
-def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None):
-    df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, as_df=True)
+def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+    df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
+@app.tool(name="dcf_sensitivity_grid", description="Build DCF sensitivity table (WACC x terminal growth) as wide + long outputs.")
+def tool_dcf_sensitivity_grid(
+    ticker: str,
+    years: int=5,
+    risk_free_rate: float=0.0418,
+    equity_risk_premium: float=0.0423,
+    growth: Optional[float]=None,
+    target_cagr_fallback: float=0.02,
+    use_average_fcf_years: Optional[int]=3,
+    assumptions_as_of: Optional[str]=None,
+    wacc_values: Optional[List[float]]=None,
+    growth_values: Optional[List[float]]=None,
+    assumptions_overrides: Optional[Dict[str, Any]]=None,
+    save_csv: bool=False,
+):
+    res = vit.dcf_sensitivity_grid(
+        ticker,
+        years=years,
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        growth=growth,
+        target_cagr_fallback=target_cagr_fallback,
+        use_average_fcf_years=use_average_fcf_years,
+        assumptions_as_of=assumptions_as_of,
+        wacc_values=wacc_values,
+        growth_values=growth_values,
+        assumptions_overrides=assumptions_overrides,
+        as_df=True,
+    )
+    grid_long = res["grid_long"]
+    grid_wide = res["grid_wide"]
+    content = [text_item(f"DCF sensitivity grid for {ticker} (rows=growth, cols=WACC)")]
+    payload = {
+        "ticker": res.get("ticker"),
+        "analysis_report_date": res.get("analysis_report_date"),
+        "inputs_used": res.get("inputs_used"),
+        "notes": res.get("notes"),
+        "grid_wide": json.loads(grid_wide.to_json()),
+        "grid_long": to_records_df(grid_long),
+    }
+    content.append(text_item(json.dumps(payload)[:120000]))
+    if save_csv:
+        base = ticker_dir(ticker)
+        uri_wide = write_df_csv(grid_wide.reset_index(), base / f"dcf_sensitivity_grid_wide_{ticker}.csv")
+        uri_long = write_df_csv(grid_long, base / f"dcf_sensitivity_grid_long_{ticker}.csv")
+        content.append(file_resource(uri_wide, "text/csv"))
+        content.append(file_resource(uri_long, "text/csv"))
+    return content
+
 @app.tool(name="plot_dcf_scenarios_vs_price", description="Plot DCF scenarios vs current price; returns PNG.")
-def tool_plot_dcf_vs_price(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.045, equity_risk_premium: float=0.060, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None):
+def tool_plot_dcf_vs_price(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     # Build audit DF via dcf_three_scenarios and get current price snapshot
-    audit_df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, as_df=True)
+    audit_df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     p1d, _, _ = vit._price_snapshots(ticker)
     out = ticker_dir(ticker) / f"{ticker}_dcf_vs_price.png"
     vit.plot_dcf_scenarios_vs_price(audit_df, p1d, save_path=str(out))

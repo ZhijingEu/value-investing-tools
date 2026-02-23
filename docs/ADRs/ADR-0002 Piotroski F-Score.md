@@ -1,7 +1,7 @@
 # ADR-0002: Piotroski F-Score – Stand-Alone Reference Module
 
 ## Status
-Proposed (Draft)
+Proposed (Draft, Not Yet Implemented in code as of 2026-02-22)
 
 ## Context
 Following ADR-0001, the Altman Z-Score and Beneish M-Score are now integrated directly into the **Risk** pillar of the 4×4 fundamentals framework.  
@@ -55,3 +55,4 @@ Higher values indicate stronger fundamentals and financial health.
 - Enhances diagnostic insight for value-oriented investors.
 - Minimal maintenance overhead (inputs already available from existing parsers).
 - Provides a consistent extension point for future empirical or academic score modules.
+
