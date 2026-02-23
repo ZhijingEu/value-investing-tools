@@ -81,3 +81,7 @@ Status: `Next`
 1. Start Sprint 3 Item 1: modularize `ValueInvestingTools.py` in small slices (preserve public API).
 2. Refresh `ValueInvestingTools_DemoNotebook.ipynb` to cover new peer diagnostics / DCF sensitivity / valuation confidence outputs.
 3. Add more MCP contract tests for new valuation metadata fields and CSV resources.
+## Sprint 2 Closeout (2026-02-23)
+- Added `vit_mcp_function_tests.py` (live-data smoke script for MCP outputs; requires network access).
+- Verified MCP outputs with live Yahoo Finance data (forward PE peer multiples, valuation confidence, assumptions snapshot ID, DCF sensitivity grid).
+- Cleaned up temporary test artifacts.
