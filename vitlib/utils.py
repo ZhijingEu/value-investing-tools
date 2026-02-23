@@ -31,7 +31,8 @@ def _provider_ticker(symbol: str):
     return _get_provider().ticker(_sanitize_ticker(symbol))
 
 def _provider_info(symbol: str) -> Dict[str, Any]:
-    return dict(_get_provider().info(_sanitize_ticker(symbol)))
+    info = _get_provider().info(_sanitize_ticker(symbol))
+    return dict(info) if info else {}
 
 def _provider_financials(symbol: str):
     return _get_provider().financials(_sanitize_ticker(symbol))
