@@ -10,6 +10,7 @@ Project direction and scope guardrails (North Star): `docs/NORTH_STAR.md`
 2. [How to use this library](#2-how-to-use-this-library)
 3. [Installation](#3-installation)
    - [MCP Server (STDIO) Quick Start](#31-mcp-server-stdio-quick-start)
+   - [Minimum Viable Run (5 minutes)](#32-minimum-viable-run-5-minutes)
 4. [Data conventions & assumptions](#4-data-conventions--assumptions)
 5. [Company Intrinsic Performance Factors](#5-company-intrinsic-performance-factors)
 6. [Multi-company Comparative Fundamentals](#6-multi-company-comparative-fundamentals)
@@ -61,6 +62,7 @@ This flow reflects how the library is organized: start with intrinsic factors, a
 The current default data source is Yahoo Finance via `yfinance`. A provider abstraction exists in `providers/` to support future backends (e.g., Financial Modeling Prep) while keeping the analytics layer stable.
 
 - Default provider: Yahoo Finance (`providers/yahoo.py`).
+- Provider adapter caches ticker objects and common datasets within a single process to reduce repeated network calls.
 - Future providers: additional APIs can be wired via `providers/base.py` without changing public function signatures.
 - Roadmap: see `docs/Roadmap.md` for the provider expansion plan and FMP exploration note.
 
@@ -105,6 +107,24 @@ vit.plot_single_metric_ts("MSFT", "ROE", family="Profitability", basis="annual")
 
 ## 3.1 MCP Server (STDIO) Quick Start
 The MCP server exposes the same library functions as tool calls over STDIO so compatible clients can orchestrate workflows. For setup instructions, refer to `VIT-MCP_Server_SetUp_README.md`.
+
+## 3.2 Minimum Viable Run (5 minutes)
+Use this quick path to verify the environment and a full data round-trip.
+
+```bash
+# 1) create + activate venv (Windows)
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+
+# 2) confirm import + version
+python -c "import vit; print('vit OK:', vit.__version__)"
+
+# 3) run a single-company snapshot
+python -c "import ValueInvestingTools as vit; print(vit.fundamentals_ttm_vs_average('MSFT').head())"
+```
+
+If this prints a non-empty table, the data layer, calculation flow, and imports are working.
 
 # 4. Data conventions & assumptions
 

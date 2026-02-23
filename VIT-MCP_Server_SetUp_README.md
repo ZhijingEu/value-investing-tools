@@ -64,6 +64,9 @@ pip install -r requirements.txt
 
 # 4) quick import sanity check
 python -c "import vit; print('vit OK:', hasattr(vit, 'compute_fundamentals_actuals'))"
+
+# 5) quick data sanity check (non-MCP)
+python -c "import ValueInvestingTools as vit; print(vit.fundamentals_ttm_vs_average('MSFT').head())"
 ```
 
 ### Optional (versioned filename)
