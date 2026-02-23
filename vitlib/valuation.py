@@ -31,6 +31,8 @@ DEFAULT_GUARDRAILS: Dict[str, Any] = {
     "rev_cagr_bounds": (-0.3, 0.3),
     "revenue_cagr_haircut": 0.8,
     "growth_floor": -0.05,
+    "terminal_growth_rfr_spread": 0.005,
+    "terminal_growth_cap_mode": "min_wacc_rfr",
     "wacc_spread_low": 0.005,
     "wacc_spread_high": 0.01,
     "scenario_growth_multipliers": (0.6, 1.0, 1.3),
@@ -49,6 +51,23 @@ def _merge_guardrails(overrides: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         if k in merged and v is not None:
             merged[k] = v
     return merged
+
+def _terminal_growth_cap(
+    wacc: float,
+    risk_free_rate: float,
+    *,
+    guardrails: Dict[str, Any],
+    terminal_growth_gap: float,
+) -> float:
+    """Return terminal growth cap based on guardrail mode."""
+    base_cap = float(wacc) - float(terminal_growth_gap)
+    mode = guardrails.get("terminal_growth_cap_mode", "min_wacc_rfr")
+    if mode == "wacc_only":
+        return base_cap
+    rfr_spread = guardrails.get("terminal_growth_rfr_spread")
+    if _is_num(rfr_spread) and _is_num(risk_free_rate):
+        return min(base_cap, float(risk_free_rate) + float(rfr_spread))
+    return base_cap
 def _revenue_cagr_from_series(series: pd.Series) -> Optional[float]:
     if isinstance(series, pd.Series) and len(series) >= 2:
         start = _safe_float(series.iloc[-1])
@@ -209,7 +228,7 @@ def dcf_three_scenarios(
     Compute Low/Mid/High per-share DCF using:
       - growth seeds from peers' FCF CAGRs if provided, else target FCF CAGR, else fallback (3%).
       - Proper WACC calculation including debt costs.
-      - growth capped at (WACC - 0.5%).
+      - growth capped by terminal-growth guardrails.
     
     NEW ADVANCED CONTROLS:
       - fcf_window_years: Limit FCF averaging window (useful for transformational companies)
@@ -320,12 +339,18 @@ def dcf_three_scenarios(
             g_low, g_mid, g_high = base * m_low, base * m_mid, base * m_high
 
     # Cap growth if it exceeds WACC
-    def _cap(g, w): 
+    def _cap(g, w):
         if not _is_num(g) or not _is_num(w):
             return None
         gap = assumptions_used["terminal_growth_gap"]
         floor = float(guardrails["growth_floor"])
-        return min(max(g, floor), w - gap)
+        cap = _terminal_growth_cap(
+            w,
+            risk_free_rate,
+            guardrails=guardrails,
+            terminal_growth_gap=gap,
+        )
+        return min(max(g, floor), cap)
     
     # CORRECTED: Match risk levels properly
     gL = _cap(g_low, wacc_low)      # Low growth, low WACC
@@ -392,6 +417,8 @@ def _dcf_sensitivity_grid_from_inputs(
     years: int,
     wacc_values: List[float],
     growth_values: List[float],
+    risk_free_rate: float,
+    guardrails: Dict[str, Any],
     terminal_growth_gap: float = VALUATION_DEFAULTS["terminal_growth_gap"],
     growth_floor: float = DEFAULT_GUARDRAILS["growth_floor"],
 ) -> pd.DataFrame:
@@ -399,7 +426,7 @@ def _dcf_sensitivity_grid_from_inputs(
     Pure helper for DCF sensitivity tables.
 
     Returns a long-form DataFrame with one row per (growth, wacc) cell.
-    Growth is floored at -5% and capped at (wacc - terminal_growth_gap) for stability.
+    Growth is floored at -5% and capped by terminal-growth guardrails for stability.
     """
     rows: List[Dict[str, Any]] = []
 
@@ -417,7 +444,12 @@ def _dcf_sensitivity_grid_from_inputs(
                     g_tmp = growth_floor
                     g_floored = True
 
-                cap_level = float(w_in) - float(terminal_growth_gap)
+                cap_level = _terminal_growth_cap(
+                    float(w_in),
+                    float(risk_free_rate),
+                    guardrails=guardrails,
+                    terminal_growth_gap=float(terminal_growth_gap),
+                )
                 if g_tmp >= cap_level:
                     g_tmp = cap_level
                     g_capped = True
@@ -543,6 +575,8 @@ def dcf_sensitivity_grid(
         years=int(years),
         wacc_values=wacc_values,
         growth_values=growth_values,
+        risk_free_rate=float(risk_free_rate),
+        guardrails=guardrails,
         terminal_growth_gap=assumptions_used["terminal_growth_gap"],
         growth_floor=float(guardrails["growth_floor"]),
     )
@@ -559,7 +593,10 @@ def dcf_sensitivity_grid(
     capped_cells = int(grid_long["Growth_Capped"].sum()) if "Growth_Capped" in grid_long.columns else 0
     floored_cells = int(grid_long["Growth_Floored"].sum()) if "Growth_Floored" in grid_long.columns else 0
     if capped_cells:
-        notes.append(f"{capped_cells} grid cells had growth capped at WACC - {assumptions_used['terminal_growth_gap']:.1%}.")
+        notes.append(
+            f"{capped_cells} grid cells had growth capped by terminal-growth guardrails "
+            f"(gap {assumptions_used['terminal_growth_gap']:.1%}, mode {guardrails.get('terminal_growth_cap_mode','min_wacc_rfr')})."
+        )
     if floored_cells:
         notes.append(f"{floored_cells} grid cells had growth floored at {float(guardrails['growth_floor']):.1%}.")
 
@@ -740,12 +777,19 @@ def dcf_implied_enterprise_value(
                 notes.append("Using fallback growth rate.")
                 confidence_flags["used_fallback_growth"] = True
 
-    # Guardrail: cap g slightly below WACC to avoid division by zero in TV
+    # Guardrail: cap g below terminal-growth limits to avoid unstable TV
     capped = False
     original_g = g
-    if _is_num(wacc) and g is not None and g >= wacc:
-        g = wacc - assumptions_used["terminal_growth_gap"]
-        capped = True
+    if _is_num(wacc) and _is_num(g):
+        cap_level = _terminal_growth_cap(
+            float(wacc),
+            float(risk_free_rate),
+            guardrails=guardrails,
+            terminal_growth_gap=assumptions_used["terminal_growth_gap"],
+        )
+        if g >= cap_level:
+            g = cap_level
+            capped = True
 
     # Additional validation for negative growth
     floor = float(guardrails["growth_floor"])
@@ -766,7 +810,10 @@ def dcf_implied_enterprise_value(
         years_used = int(years)
 
     if capped:
-        notes.append(f"Growth capped from {original_g:.1%} to {g:.1%} (WACC - {assumptions_used['terminal_growth_gap']:.1%}) to stabilize terminal value.")
+        notes.append(
+            f"Growth capped from {original_g:.1%} to {g:.1%} by terminal-growth guardrails "
+            f"(gap {assumptions_used['terminal_growth_gap']:.1%}, mode {guardrails.get('terminal_growth_cap_mode','min_wacc_rfr')})."
+        )
         confidence_flags["growth_capped"] = True
 
     # Add reasonableness checks

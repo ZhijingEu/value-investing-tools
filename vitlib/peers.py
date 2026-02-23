@@ -112,16 +112,25 @@ def _pull_company_snapshot(ticker: str) -> Dict[str, Any]:
     info = s.info
     trailing_pe = info.get('trailingPE')
     forward_pe = info.get('forwardPE')
+    shares_outstanding = info.get('sharesOutstanding', None)
+    earnings = info.get('netIncomeToCommon')
+    revenue = info.get('totalRevenue')
+    eps_ttm = info.get('trailingEps')
+    revenue_per_share_ttm = info.get('revenuePerShare')
+    if not _is_num(eps_ttm) and _is_pos(earnings) and _is_pos(shares_outstanding):
+        eps_ttm = _safe_float(earnings) / _safe_float(shares_outstanding)
+    if not _is_num(revenue_per_share_ttm) and _is_pos(revenue) and _is_pos(shares_outstanding):
+        revenue_per_share_ttm = _safe_float(revenue) / _safe_float(shares_outstanding)
     return {
         'ticker': ticker,
         'revenue_series': s.financials.loc['Total Revenue'].dropna() if 'Total Revenue' in s.financials.index else pd.Series(dtype=float),
         'beta': info.get('beta', None),
-        'shares_outstanding': info.get('sharesOutstanding', None),
+        'shares_outstanding': shares_outstanding,
         'cashflow': s.cashflow,
         'market_cap': info.get('marketCap'),
         'ebitda': info.get('ebitda'),
-        'revenue': info.get('totalRevenue'),
-        'earnings': info.get('netIncomeToCommon'),
+        'revenue': revenue,
+        'earnings': earnings,
         'revenue_growth': info.get('revenueGrowth'),
         'earnings_growth': info.get('earningsGrowth'),
         'operating_margin': info.get('operatingMargins'),
@@ -135,7 +144,9 @@ def _pull_company_snapshot(ticker: str) -> Dict[str, Any]:
         'ps_ratio': info.get('priceToSalesTrailing12Months'),
         'ev_to_ebitda': info.get('enterpriseToEbitda'),
         'current_price': info.get('currentPrice'),
-        'free_cash_flow': info.get('freeCashflow')
+        'free_cash_flow': info.get('freeCashflow'),
+        'eps_ttm': eps_ttm,
+        'revenue_per_share_ttm': revenue_per_share_ttm,
     }
 
 def peer_multiples(
