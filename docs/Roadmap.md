@@ -161,6 +161,7 @@ Targets:
 - staples peer workflow notebook
 - tech workflow notebook with manual assumptions
 - update README function map and examples
+- provider roadmap: add an FMP (Financial Modeling Prep) provider behind the adapter interface once demand is validated
 
 Completion criteria:
 - reproducible notebooks with saved outputs

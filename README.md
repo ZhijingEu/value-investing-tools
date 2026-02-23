@@ -1010,7 +1010,8 @@ Use this when you need a full audit trail in one call. Ideal for:
 Planned improvements for future revisions include:
 - Project scope and positioning guardrails are defined in `docs/NORTH_STAR.md` (use this before proposing major new features).
 - Extended health diagnostics (coverage scoring, sector-specific caveats).
-- Optional alternative data sources beyond Yahoo Finance.
+- Optional alternative data sources beyond Yahoo Finance (provider abstraction already scaffolded).
+- Potential FMP (Financial Modeling Prep) provider once demand is validated.
 - Richer visualization (heatmaps for sensitivity grids, factor-radar plots).
 - Additional factor modules (earnings quality, accruals, working capital intensity).
 - CLI wrapper for running orchestrated workflows from the command line.
