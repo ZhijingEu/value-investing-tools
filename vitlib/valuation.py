@@ -4,8 +4,6 @@ from typing import List, Dict, Any, Optional, Literal, Tuple
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
-
 from vitlib.utils import (
     _today_iso,
     _sanitize_ticker,
@@ -15,6 +13,10 @@ from vitlib.utils import (
     _equity_value_from_ev,
     _valuation_confidence_from_flags,
     _fcf_series_from_cashflow,
+    _provider_info,
+    _provider_financials,
+    _provider_balance_sheet,
+    _provider_ticker,
     to_records,
     valuation_defaults,
     VALUATION_DEFAULTS,
@@ -96,9 +98,9 @@ def _calculate_wacc(
     """Calculate proper WACC including debt costs"""
     try:
         # Get balance sheet data
-        ticker_obj = yf.Ticker(snap['ticker'])
-        bs = ticker_obj.balance_sheet
-        income = ticker_obj.financials
+        ticker_obj = _provider_ticker(snap['ticker'])
+        bs = _provider_balance_sheet(snap['ticker'])
+        income = _provider_financials(snap['ticker'])
         
         if bs.empty or income.empty:
             # Fallback to cost of equity if no debt data
@@ -255,7 +257,7 @@ def dcf_three_scenarios(
 
     beta = _safe_float(snap["beta"])
     if beta is None:
-        raise ValueError(f"Missing beta from yfinance for {t}. Cannot compute WACC.")
+        raise ValueError(f"Missing beta from provider for {t}. Cannot compute WACC.")
 
     # Calculate proper WACC
     wacc_mid = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta, guardrails=guardrails)
@@ -387,7 +389,7 @@ def dcf_three_scenarios(
 
 # HELPER FUNCTION: More robust debt extraction
 def _get_total_debt_from_info(info: dict) -> Optional[float]:
-    """Extract total debt from yfinance info dict with multiple fallbacks"""
+    """Extract total debt from provider info dict with multiple fallbacks"""
     debt_keys = [
         "totalDebt",
         "longTermDebt", 
@@ -515,7 +517,7 @@ def dcf_sensitivity_grid(
 
     beta = _safe_float(snap.get("beta"))
     if beta is None:
-        raise ValueError(f"Missing beta from yfinance for {t}. Cannot compute sensitivity WACC baseline.")
+        raise ValueError(f"Missing beta from provider for {t}. Cannot compute sensitivity WACC baseline.")
 
     base_wacc = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta, guardrails=guardrails)
     if base_wacc is None:
@@ -567,7 +569,7 @@ def dcf_sensitivity_grid(
 
     so = _safe_float(snap.get("shares_outstanding"))
     if not _is_pos(so):
-        raise ValueError(f"Missing shares outstanding from yfinance for {t}. Cannot compute per-share sensitivity grid.")
+        raise ValueError(f"Missing shares outstanding from provider for {t}. Cannot compute per-share sensitivity grid.")
 
     grid_long = _dcf_sensitivity_grid_from_inputs(
         avg_fcf=float(avg_fcf),
@@ -679,7 +681,7 @@ def dcf_implied_enterprise_value(
     # --- IMPROVED: Calculate proper WACC ---
     beta = _safe_float(snap.get("beta"))
     if beta is None:
-        raise ValueError(f"Missing beta from yfinance for {t}. Cannot compute WACC.")
+        raise ValueError(f"Missing beta from provider for {t}. Cannot compute WACC.")
     
     # Use the improved WACC calculation
     wacc = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta, guardrails=guardrails)
@@ -918,7 +920,7 @@ def compare_to_market_ev(
 
     # IMPROVED: More robust market data retrieval
     try:
-        info = yf.Ticker(t).info
+        info = _provider_info(t)
         observed_ev = _safe_float(info.get("enterpriseValue"))
         market_cap = _safe_float(info.get("marketCap"))
         
@@ -1015,7 +1017,7 @@ def implied_equity_value_from_ev(
 
     # IMPROVED: More robust balance sheet data retrieval
     try:
-        ticker_obj = yf.Ticker(t)
+        ticker_obj = _provider_ticker(t)
         bs = ticker_obj.balance_sheet
         info = ticker_obj.info
         
@@ -1074,7 +1076,7 @@ def implied_equity_value_from_ev(
     shares_outstanding = None
     per_share_value = None
     try:
-        shares_outstanding = _safe_float(yf.Ticker(t).info.get("sharesOutstanding"))
+        shares_outstanding = _safe_float(_provider_info(t).get("sharesOutstanding"))
         if _is_pos(shares_outstanding) and _is_num(equity_implied):
             per_share_value = equity_implied / shares_outstanding
     except Exception:
@@ -1196,7 +1198,7 @@ def compare_to_market_cap(
     # 3) Fetch observed Market Cap (with a basic fallback)
     notes = [base_notes, str(eq_df.iloc[0].get("Notes") or "")]
     try:
-        info = yf.Ticker(t).info
+        info = _provider_info(t)
         observed_mktcap = _safe_float(info.get("marketCap"))
         if observed_mktcap is None:
             # fallback: shares_outstanding * currentPrice (if both exist)

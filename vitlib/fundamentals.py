@@ -9,7 +9,6 @@ from typing import List, Dict, Any, Optional, Tuple, Literal, Union
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 import re
 import inspect
 
@@ -21,6 +20,11 @@ from vitlib.utils import (
     _safe_float,
     _pct_from_info,
     _ensure_dir,
+    _provider_ticker,
+    _provider_info,
+    _provider_financials,
+    _provider_cashflow,
+    _provider_balance_sheet,
     to_records,
     _fcf_series_from_cashflow,
 )
@@ -100,7 +104,7 @@ def _public_suffix_for(basis: Literal["annual","ttm"], metric_key: str) -> str:
     """
     Public label suffix rules:
     - CAGRs (revenue_cagr, earnings_cagr): always '-Ave' (historical window; no TTM analog)
-    - PEG, Beta: always '-TTM' (point-in-time from yfinance.info)
+    - PEG, Beta: always '-TTM' (point-in-time from provider info)
     - ROE/ROA/margins, reinvestment_rate, capex_ratio, de_ratio, current_ratio: follow `basis`:
     - 'annual' → '-Ave' (multi-year average from annual statements)
     - 'ttm'    → '-TTM' (TTM or latest-Q derived)
@@ -146,11 +150,11 @@ def _make_rename_map(basis: Literal["annual","ttm"]) -> dict[str, str]:
     return m
 
 def _fetch_statements(ticker: str) -> Tuple[dict, pd.DataFrame, pd.DataFrame, pd.DataFrame, str, int]:
-    tkr = yf.Ticker(ticker)
-    info = tkr.info
-    financials = tkr.financials
-    cashflow = tkr.cashflow
-    balance = tkr.balance_sheet
+    tkr = _provider_ticker(ticker)
+    info = _provider_info(ticker)
+    financials = _provider_financials(ticker)
+    cashflow = _provider_cashflow(ticker)
+    balance = _provider_balance_sheet(ticker)
 
     years = []
     if isinstance(financials, pd.DataFrame): years = [c for c in financials.columns]
@@ -333,7 +337,7 @@ def compute_fundamentals_actuals(
 
             # --- TTM flows (from quarterlies) for reinvestment/capex; and point-in-time D/E ---
             try:
-                tkr = yf.Ticker(ticker)
+                tkr = _provider_ticker(ticker)
                 is_q = tkr.quarterly_financials
                 cf_q = tkr.quarterly_cashflow
                 bs_q = tkr.quarterly_balance_sheet
@@ -752,7 +756,7 @@ def historical_average_share_prices(
 def _alias_first(df: pd.DataFrame, aliases: List[str]) -> Optional[pd.Series]:
     """
     Return the first matching row (as a Series) from df.index for any alias.
-    Index match is exact, case-sensitive to align with yfinance keys.
+    Index match is exact, case-sensitive to align with provider keys.
     """
     if not isinstance(df, pd.DataFrame) or df.empty:
         return None
@@ -765,7 +769,7 @@ def _annual_sorted(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure annual statement has increasing columns by fiscal year (left→right)."""
     if not isinstance(df, pd.DataFrame) or df.empty:
         return df
-    # yfinance usually returns most-recent on the left; enforce ascending by column name if they are dates/years
+    # Provider data usually returns most-recent on the left; enforce ascending by column name if they are dates/years
     try:
         # Columns are often Timestamps or datelike strings
         cols = list(df.columns)
@@ -781,7 +785,7 @@ def _sum_last_4_quarters(s: pd.Series) -> Optional[float]:
     s = s.dropna().astype(float)
     if len(s) < 4:
         return None
-    return float(s.iloc[:4].sum())  # yfinance quarterly has most-recent first
+    return float(s.iloc[:4].sum())  # quarterly statements usually have most-recent first
 
 def _avg_pair(a: Optional[float], b: Optional[float]) -> Optional[float]:
     if a is None or b is None:
@@ -806,7 +810,7 @@ def compute_profitability_timeseries(
       wide (default): index = [YYYY, ... , 'TTM' (optional)], columns = ROE, NetMargin, OpMargin, ROA, Notes
       long: columns = [Period, Metric, Value, Notes]
     """
-    tkr = yf.Ticker(ticker)
+    tkr = _provider_ticker(ticker)
 
     # Annual statements
     is_annual = _annual_sorted(tkr.financials)      # income statement
@@ -931,7 +935,7 @@ def compute_liquidity_timeseries(
       - CurrentRatio = Current Assets / Current Liabilities
     'TTM' row is really 'LatestQ' from the most recent quarterly balance sheet.
     """
-    tkr = yf.Ticker(ticker)
+    tkr = _provider_ticker(ticker)
     bs_annual = _annual_sorted(tkr.balance_sheet)
 
     s_ca = _alias_first(bs_annual, ["Total Current Assets", "Current Assets"])
@@ -1068,7 +1072,7 @@ def fundamentals_ttm_vs_average(
     cr_ttm  = _safe_get(liq_ttm_row.squeeze(), "CurrentRatio") if isinstance(liq_ttm_row, pd.Series) else (None if liq_ttm_row.empty else float(liq_ttm_row["CurrentRatio"].iloc[0]))
 
     # Pull TTM-only items (PEG, Beta) and historical-avg items you already compute in your fundamentals
-    info = yf.Ticker(ticker).info or {}
+    info = _provider_info(ticker) or {}
     peg_ttm  = info.get("trailingPegRatio", None)
     beta_ttm = info.get("beta", None)
 
@@ -1098,7 +1102,7 @@ def fundamentals_ttm_vs_average(
         r"debt.*equity.*ratio", r"^de_ratio$"])
     
     # --- NEW: compute TTM for Reinvestment Rate, D/E, and Capex Ratio from quarterlies ---
-    tkr = yf.Ticker(ticker)
+    tkr = _provider_ticker(ticker)
     is_q = tkr.quarterly_financials
     cf_q = tkr.quarterly_cashflow
     bs_q = tkr.quarterly_balance_sheet
@@ -1138,7 +1142,7 @@ def fundamentals_ttm_vs_average(
         capex_ratio_ttm = abs(float(capex_ttm)) / float(rev_ttm)
 
     # Annual income statements for CAGR coverage
-    is_annual = _annual_sorted(yf.Ticker(ticker).financials)
+    is_annual = _annual_sorted(_provider_financials(ticker))
     s_rev = _alias_first(is_annual, ["Total Revenue","Revenue"])
     s_ni  = _alias_first(is_annual, ["Net Income","Net Income Common Stockholders","Net Income Applicable To Common Shares"])
 
@@ -1146,7 +1150,7 @@ def fundamentals_ttm_vs_average(
     ni_window  = _coverage_from_series(s_ni)
 
     # Balance sheet for leverage coverage
-    bs_annual = _annual_sorted(yf.Ticker(ticker).balance_sheet)
+    bs_annual = _annual_sorted(_provider_balance_sheet(ticker))
     s_debt = _alias_first(bs_annual, ["Total Debt","Long Term Debt","Short Long Term Debt"])
     s_equ  = _alias_first(bs_annual, ["Total Stockholder Equity","Common Stock Equity"])
     de_window = _coverage_from_series(s_debt)  # or overlap with equity if you want
@@ -1235,7 +1239,7 @@ def historical_growth_metrics(
         y0 = y1 = None
 
         try:
-            yt   = yf.Ticker(t)
+            yt   = _provider_ticker(t)
             fin  = getattr(yt, "financials", None)
             qfin = getattr(yt, "quarterly_financials", None)
             cfa  = getattr(yt, "cashflow", None)

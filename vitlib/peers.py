@@ -4,8 +4,6 @@ from typing import List, Dict, Any, Optional, Literal, Union
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
-
 from vitlib.utils import (
     _today_iso,
     _sanitize_ticker,
@@ -14,6 +12,12 @@ from vitlib.utils import (
     _safe_float,
     _equity_value_from_ev,
     _ensure_dir,
+    _provider_ticker,
+    _provider_info,
+    _provider_financials,
+    _provider_cashflow,
+    _provider_balance_sheet,
+    _provider_history,
     to_records,
 )
 from vitlib.fundamentals import compute_fundamentals_actuals
@@ -49,8 +53,7 @@ def _price_snapshots_ext(ticker: str) -> dict:
     t = _sanitize_ticker(ticker)
     notes = []
     try:
-        yt = yf.Ticker(t)
-        hist = yt.history(period="200d", auto_adjust=True, actions=False)
+        hist = _provider_history(t, period="200d", auto_adjust=True, actions=False)
         if hist is None or hist.empty or "Close" not in hist.columns:
             return {"ticker": t, "avg_price_1d": None, "avg_price_30d": None,
                     "avg_price_90d": None, "avg_price_180d": None,
@@ -108,8 +111,9 @@ def _peer_usability_reasons(row: pd.Series) -> List[str]:
     return r
 
 def _pull_company_snapshot(ticker: str) -> Dict[str, Any]:
-    s = yf.Ticker(ticker)
-    info = s.info
+    info = _provider_info(ticker)
+    financials = _provider_financials(ticker)
+    cashflow = _provider_cashflow(ticker)
     trailing_pe = info.get('trailingPE')
     forward_pe = info.get('forwardPE')
     shares_outstanding = info.get('sharesOutstanding', None)
@@ -123,10 +127,10 @@ def _pull_company_snapshot(ticker: str) -> Dict[str, Any]:
         revenue_per_share_ttm = _safe_float(revenue) / _safe_float(shares_outstanding)
     return {
         'ticker': ticker,
-        'revenue_series': s.financials.loc['Total Revenue'].dropna() if 'Total Revenue' in s.financials.index else pd.Series(dtype=float),
+        'revenue_series': financials.loc['Total Revenue'].dropna() if 'Total Revenue' in financials.index else pd.Series(dtype=float),
         'beta': info.get('beta', None),
         'shares_outstanding': shares_outstanding,
-        'cashflow': s.cashflow,
+        'cashflow': cashflow,
         'market_cap': info.get('marketCap'),
         'ebitda': info.get('ebitda'),
         'revenue': revenue,
@@ -533,16 +537,18 @@ def price_from_peer_multiples(
         """
         Returns dict with SharesOutstanding, Revenue, NetIncome, EBITDA,
         TotalDebt, CashAndCashEquivalents, MinorityInterest, NetDebt
-        using yfinance first, then library fallbacks.
+        using provider first, then library fallbacks.
         """
         notes = []
-        # 1) Try yfinance (as before) ...
+        # 1) Try provider (as before) ...
         try:
-            yt = yf.Ticker(t); info = yt.info or {}
+            ticker_obj = _provider_ticker(t)
+            info = _provider_info(t) or {}
             shares = _safe_float(info.get("sharesOutstanding"))
             revenue = net_income = ebitda = total_debt = cash_eq = mi = None
 
-            fin = getattr(yt,"financials",None); qfin = getattr(yt,"quarterly_financials",None)
+            fin = _provider_financials(t)
+            qfin = getattr(ticker_obj, "quarterly_financials", None)
             def _latest_or_roll4(df, field, qdf=None):
                 v=None
                 if isinstance(df,pd.DataFrame) and field in df.index and not df.loc[field].dropna().empty:
@@ -559,7 +565,7 @@ def price_from_peer_multiples(
             total_debt = _safe_float(info.get("totalDebt"))
             cash_eq    = _safe_float(info.get("totalCash"))
             mi         = _safe_float(info.get("minorityInterest"))
-            bs = getattr(yt,"balance_sheet",None)
+            bs = _provider_balance_sheet(t)
             if isinstance(bs,pd.DataFrame) and not bs.empty:
                 if not _is_num(total_debt):
                     for fld in ["Total Debt","Short Long Term Debt","Long Term Debt"]:
@@ -577,7 +583,7 @@ def price_from_peer_multiples(
                         "TotalDebt":total_debt,"CashAndCashEquivalents":cash_eq,"MinorityInterest":mi,
                         "NetDebt": (total_debt or 0.0) - (cash_eq or 0.0)}, notes
         except Exception as e:
-            notes.append(f"yfinance error: {str(e)[:80]}")
+            notes.append(f"provider error: {str(e)[:80]}")
 
         # 2) Fallback to your library’s fundamentals (robust offline path)
         try:

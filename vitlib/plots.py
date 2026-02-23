@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from vitlib.utils import _is_num, _safe_float, _today_iso
+from vitlib.utils import _is_num, _safe_float, _today_iso, _provider_ticker
 from vitlib.fundamentals import compute_profitability_timeseries, compute_liquidity_timeseries
 from vitlib.peers import _price_snapshots
 # VISUALISATION FUNCTIONS
@@ -635,7 +635,7 @@ def _fetch_timeseries_for_plot(
 
     # --- Growth-basic: YoY (% as decimal) for Revenue and Net Income ---
     if family.lower().startswith("growth"):
-        tkr = yf.Ticker(ticker)
+        tkr = _provider_ticker(ticker)
         IS_a = _annual_sorted(tkr.financials)
         IS_q = tkr.quarterly_financials
 
@@ -689,7 +689,7 @@ def _fetch_timeseries_for_plot(
 
     # --- Reinvestment-basic: per-period CapexRatio & ReinvestmentRate (annual + optional TTM) ---
     if family.lower().startswith("reinvest"):
-        tkr = yf.Ticker(ticker)
+        tkr = _provider_ticker(ticker)
         IS_a = _annual_sorted(tkr.financials)
         CF_a = _annual_sorted(tkr.cashflow)
 

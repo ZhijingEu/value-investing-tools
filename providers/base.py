@@ -32,3 +32,19 @@ class MarketDataProvider(Protocol):
     def info(self, symbol: str) -> Mapping[str, Any]:
         """Return snapshot metadata/quote fields for a symbol."""
         ...
+
+    def financials(self, symbol: str) -> Any:
+        """Return annual income statement data for a symbol."""
+        ...
+
+    def cashflow(self, symbol: str) -> Any:
+        """Return annual cashflow statement data for a symbol."""
+        ...
+
+    def balance_sheet(self, symbol: str) -> Any:
+        """Return annual balance sheet data for a symbol."""
+        ...
+
+    def history(self, symbol: str, **kwargs: Any) -> Any:
+        """Return historical price data for a symbol."""
+        ...

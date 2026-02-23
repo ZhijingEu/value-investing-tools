@@ -9,14 +9,41 @@ import datetime as dt
 from typing import List, Dict, Any, Optional, Tuple, Literal
 import numpy as np
 import pandas as pd
-import yfinance as yf
 import matplotlib.pyplot as plt
 import re
 import inspect
 
+from providers.base import MarketDataProvider
+from providers.yahoo import YahooFinanceProvider
+
 # -----------------------------
 # General helpers
 # -----------------------------
+_PROVIDER: MarketDataProvider | None = None
+
+def _get_provider() -> MarketDataProvider:
+    global _PROVIDER
+    if _PROVIDER is None:
+        _PROVIDER = YahooFinanceProvider()
+    return _PROVIDER
+
+def _provider_ticker(symbol: str):
+    return _get_provider().ticker(_sanitize_ticker(symbol))
+
+def _provider_info(symbol: str) -> Dict[str, Any]:
+    return dict(_get_provider().info(_sanitize_ticker(symbol)))
+
+def _provider_financials(symbol: str):
+    return _get_provider().financials(_sanitize_ticker(symbol))
+
+def _provider_cashflow(symbol: str):
+    return _get_provider().cashflow(_sanitize_ticker(symbol))
+
+def _provider_balance_sheet(symbol: str):
+    return _get_provider().balance_sheet(_sanitize_ticker(symbol))
+
+def _provider_history(symbol: str, **kwargs: Any):
+    return _get_provider().history(_sanitize_ticker(symbol), **kwargs)
 def _today_iso() -> str:
     return dt.date.today().isoformat()
 
@@ -249,7 +276,7 @@ def _fcf_series_from_cashflow(cf: pd.DataFrame) -> pd.Series:
     ocf = cf.loc['Operating Cash Flow'].dropna() if 'Operating Cash Flow' in cf.index else pd.Series(dtype=float)
     capex = cf.loc['Capital Expenditure'].dropna() if 'Capital Expenditure' in cf.index else pd.Series(dtype=float)
 
-    # CORRECTED: Subtract CapEx (it's usually negative in yfinance, so we add it)
+    # CORRECTED: Subtract CapEx (it's usually negative in provider data, so we add it)
     if not ocf.empty and not capex.empty:
         # Ensure same index
         common_idx = ocf.index.intersection(capex.index)
