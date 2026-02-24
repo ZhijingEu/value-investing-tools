@@ -578,6 +578,10 @@ Once an implied EV is computed, it can be reconciled to equity value using stand
 
 $$\text{Equity} = EV - \text{Net Debt} - \text{Minority Interest}$$
 
+Alternate form when net debt is not directly available:
+
+$$\text{Equity} = EV - \text{Total Debt} + \text{Cash and Equivalents} - \text{Minority Interest}$$
+
 Then:
 
 $$\text{Per-Share Implied} = \frac{\text{Equity}}{\text{Shares Outstanding}}$$
