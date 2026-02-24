@@ -1,7 +1,7 @@
 # ADR-0003: Valuation Defaults - ERP, Fallback Growth, and FCF Window
 
 ## Status
-Proposed (Draft)
+Accepted (Implemented in code, 2026-02-23)
 
 ## Context
 Valuation calculations within the Value Investing Tools library - particularly  
@@ -79,3 +79,4 @@ using these defaults when specific inputs are absent.
 ## References
 - Aswath Damodaran, implied ERP update (Jan 1, 2026).
 - McKinsey & Co., Valuation: Measuring and Managing the Value of Companies, 8th ed., 2020.
+

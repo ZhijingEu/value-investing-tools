@@ -131,3 +131,4 @@ When analyzing financial-sector tickers:
 - Risk pillar now anchors on Altman Z and Beneish M (internal sub-factors).  
 - Remaining reference model = Piotroski F-Score (see ADR-0002).  
 
+

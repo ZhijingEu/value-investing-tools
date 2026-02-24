@@ -102,3 +102,4 @@ Adopt a **dual-mode transport design** for MCP integration:
 - Anthropic, *Model Context Protocol (MCP) Specification*, 2024.  
 - OpenAI, *ChatGPT Developer Mode Tool Interface Documentation*, 2025.  
 - FastAPI Documentation – [https://fastapi.tiangolo.com/](https://fastapi.tiangolo.com/)  
+

@@ -27,3 +27,4 @@ Until the 4x4 redesign lands in code:
 - Improves contributor correctness and review quality.
 - Reduces contract drift between docs, MCP tool behavior, and library outputs.
 - Enables incremental implementation of planned ADRs without breaking user trust.
+

@@ -56,3 +56,4 @@ Higher values indicate stronger fundamentals and financial health.
 - Minimal maintenance overhead (inputs already available from existing parsers).
 - Provides a consistent extension point for future empirical or academic score modules.
 
+
