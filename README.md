@@ -1065,7 +1065,7 @@ Use this when you need a full audit trail in one call. Ideal for:
 - This library is intended for educational and analytical use only. It does not constitute investment advice.
 - Outputs should always be interpreted alongside qualitative analysis (management quality, competitive dynamics, regulatory environment).
 - Historical financials are taken from Yahoo Finance via yfinance; occasional gaps or inconsistencies are expected.
-- Assumption rationale and override guidance: `docs/ASSUMPTIONS_RATIONALE.md`.
+- Assumption rationale and override guidance: `Methodology.md`.
 
 ## Roadmap
 Planned improvements for future revisions include:

@@ -1,4 +1,6 @@
-# Assumptions Rationale & Override Guide
+# Methodology & Assumptions
+
+This document explains the theoretical foundations, key model choices, and default assumptions used by VIT. It complements the README (usage) with rationale and citations so results are auditable.
 
 This document explains the default numeric assumptions and guardrails used by VIT. It is intentionally concise and focused on what is defensible via external sources vs. what is engineering guardrail logic for stability.
 

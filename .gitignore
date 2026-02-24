@@ -32,3 +32,6 @@ Thumbs.db
 *secrets*.json
 claude_desktop_config*.json
 docs/mcp/claude-desktop.local.json
+
+# --- internal working docs (local-only) ---
+docs/internal/

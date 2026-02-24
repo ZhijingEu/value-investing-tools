@@ -199,4 +199,4 @@ Completion criteria:
 - reproducible calibration scripts and report artifact
 Output target: Calibrated and empirically supported scoring system.
 
-Reference artifact: `docs/Calibration_Backtest_Plan.md`
+Reference artifact: `docs/internal/Calibration_Backtest_Plan.md` (maintainers only)
