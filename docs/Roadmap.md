@@ -199,4 +199,9 @@ Completion criteria:
 - reproducible calibration scripts and report artifact
 Output target: Calibrated and empirically supported scoring system.
 
-Reference artifact: `docs/internal/Calibration_Backtest_Plan.md` (maintainers only)
+Notes (summary of the calibration plan):
+- Define a reproducible backtest dataset and label universe (time window, sector coverage, survivorship handling).
+- Compute score distributions by sector and market-cap buckets to evaluate stability.
+- Backtest quartiles against forward returns and drawdown metrics.
+- Tune thresholds/weights conservatively and version any changes.
+- Publish a calibration report and scripts for reproducibility.
