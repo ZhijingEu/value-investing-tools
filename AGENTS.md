@@ -24,6 +24,8 @@
 - Use `snake_case` for functions/variables, `UPPER_CASE` for constants, and clear metric names.
 - Keep public function signatures stable; document behavior changes in `README.md` and relevant ADR/docs files.
 - Prefer small, focused helpers over adding more monolithic logic blocks.
+- For new modules, include: function signatures, a minimal input/output example, and a reference to the relevant ADR (if applicable).
+- Keep plots deterministic when possible (e.g., stable ordering, no randomness).
 
 ## Testing Guidelines
 - Current baseline uses `unittest` (`python -m unittest discover -s tests -p "test_*.py" -v`).

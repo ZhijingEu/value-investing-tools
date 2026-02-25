@@ -22,3 +22,7 @@ This folder contains public documentation intended for users and contributors.
 
 ## Internal Working Docs
 Internal working notes live under `docs/internal/` and are not tracked in git.
+
+## Contributor Expectations (Summary)
+- New modules should include function signatures, a minimal input/output example, and ADR references when relevant.
+- Keep plots deterministic where possible (stable ordering, no randomness).
