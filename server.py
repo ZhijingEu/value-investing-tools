@@ -118,6 +118,14 @@ app = FastMCP(f"ValueInvestingTools (STDIO) — using {MCP_IMPL}")
 # ============================
 @app.tool(name="_price_snapshots", description="Return short price snapshot for a ticker (1d avg, as-of date, notes).")
 def tool_price_snapshots(ticker: str):
+    """
+    Purpose:
+      Quick price anchor for a single ticker (1-day avg plus as-of date).
+    Output:
+      A short text summary and a JSON block with extended averages when available.
+    Interpretation:
+      Use as a lightweight anchor for valuation comparisons or chart overlays.
+    """
     """Uses the legacy triple (avg_1d, price_asof, notes) for compatibility, and also returns the extended dict."""
     a1d, asof, notes = vit._price_snapshots(ticker)
     ext = vit._price_snapshots_ext(ticker)
@@ -128,6 +136,14 @@ def tool_price_snapshots(ticker: str):
 
 @app.tool(name="historical_average_share_prices", description="Average share prices over 1/30/90/180 days for tickers.")
 def tool_hist_avg_px(tickers: Union[str, List[str]], analysis_report_date: Optional[str]=None, save_csv: bool=False):
+    """
+    Purpose:
+      Compute short-window average prices for tickers (1/30/90/180 days).
+    Output:
+      Table with avg_price_* and price_asof per ticker; optional CSV artifact.
+    Interpretation:
+      Useful as comparison anchors for DCF/peer valuation ranges.
+    """
     if isinstance(tickers, str):
         tickers = [tickers]
     df = vit.historical_average_share_prices(tickers, analysis_report_date=analysis_report_date, save_csv=False, as_df=True)
@@ -141,6 +157,16 @@ def tool_hist_avg_px(tickers: Union[str, List[str]], analysis_report_date: Optio
 
 @app.tool(name="historical_growth_metrics", description="Compute historical CAGRs (Revenue, Net Income, FCF) per ticker.")
 def tool_hist_growth(tickers: Union[str, List[str]], min_years: int=3, analysis_report_date: Optional[str]=None, save_csv: bool=False):
+    """
+    Purpose:
+      Compute historical Revenue/Earnings/FCF CAGRs over the clean annual window.
+    Key inputs:
+      - min_years: minimum clean annual points for CAGR.
+    Output:
+      CAGR table with period start/end years and notes.
+    Interpretation:
+      FCF CAGR is None if endpoints are non-positive (avoids invalid growth).
+    """
     if isinstance(tickers, str):
         tickers = [tickers]
     df = vit.historical_growth_metrics(tickers, min_years=min_years, analysis_report_date=analysis_report_date, save_csv=False, as_df=True)
@@ -205,6 +231,17 @@ def tool_compute_scores(tickers: Optional[List[str]]=None, basis: Literal["annua
 
 @app.tool(name="plot_single_metric_ts", description="Plot a single metric over time for one ticker; returns PNG resource.")
 def tool_plot_single_metric_ts(ticker: str, metric: str, family: Literal["Profitability","Growth","Reinvestment","Risk"]="Profitability", basis: Literal["annual","ttm"]="annual", save_png: bool=True):
+    """
+    Purpose:
+      Plot one metric over time for a single ticker.
+    Key inputs:
+      - family: metric family (Profitability/Growth/Reinvestment/Risk)
+      - basis: annual vs ttm
+    Output:
+      PNG chart resource (file URI).
+    Interpretation:
+      Use for trend inspection or to validate a single metric driving a score.
+    """
     out = ticker_dir(ticker) / f"{ticker}_ts_{metric}_{basis}.png"
     fig, ax = vit.plot_single_metric_ts(ticker, metric, family=family, basis=basis)
     if fig is None:
@@ -215,6 +252,16 @@ def tool_plot_single_metric_ts(ticker: str, metric: str, family: Literal["Profit
 
 @app.tool(name="plot_metrics_family_ts", description="Plot multiple metrics (family) over time for one ticker; returns PNG.")
 def tool_plot_metrics_family_ts(ticker: str, family: Literal["Profitability","Growth","Reinvestment","Risk"]="Profitability", metrics: Optional[List[str]]=None, basis: Literal["annual","ttm"]="annual"):
+    """
+    Purpose:
+      Plot a family of metrics over time for one ticker.
+    Key inputs:
+      - metrics: optional subset of metrics within the family.
+    Output:
+      PNG chart resource.
+    Interpretation:
+      Useful for quick diagnostics of profitability/growth/reinvestment/risk trends.
+    """
     out = ticker_dir(ticker) / f"{ticker}_ts_{family}_{basis}.png"
     fig, ax = vit.plot_metrics_family_ts(ticker, family=family, metrics=metrics, basis=basis, save_path=str(out))
     if fig is None:
@@ -224,6 +271,14 @@ def tool_plot_metrics_family_ts(ticker: str, family: Literal["Profitability","Gr
 
 @app.tool(name="plot_multi_tickers_multi_metrics_ts", description="Plot multiple tickers * multiple metrics (family) over time; returns PNG.")
 def tool_plot_multi_tickers_multi_metrics_ts(tickers: List[str], family: Literal["Profitability","Growth","Reinvestment","Risk"]="Profitability", metrics: Optional[List[str]]=None, basis: Literal["annual","ttm"]="annual"):
+    """
+    Purpose:
+      Compare a family of metrics across multiple tickers over time.
+    Output:
+      PNG chart resource; each metric gets its own subplot.
+    Interpretation:
+      Use to spot relative trend divergence across peers.
+    """
     tag = f"{family}_{basis}"
     out = OUTPUT_ROOT / "MULTI" / f"{tag}_{'-'.join([t.upper() for t in tickers])}.png"
     fig, axes = vit.plot_multi_tickers_multi_metrics_ts(tickers, family=family, metrics=metrics, basis=basis, save_path=str(out))
@@ -234,6 +289,15 @@ def tool_plot_multi_tickers_multi_metrics_ts(tickers: List[str], family: Literal
 
 @app.tool(name="plot_scores_clustered", description="Clustered bar chart of fundamentals scores for tickers; returns PNG.")
 def tool_plot_scores_clustered(tickers: List[str], basis: Literal["annual","ttm"]="annual", metrics: Optional[List[str]]=None, include_total: bool=True, sort_by: Literal["family","avg","name","none"]="family", title: Optional[str]=None):
+    """
+    Purpose:
+      Visualize scored fundamentals (0–5) across tickers in a clustered bar chart.
+    Key inputs:
+      - metrics: optional subset (per-metric score_*) or rollups (profitability_score, etc.)
+      - sort_by: "family" (default), "avg", "name", "none"
+    Output:
+      PNG chart resource.
+    """
     out = OUTPUT_ROOT / "SCORES" / f"scores_{'-'.join([t.upper() for t in tickers])}_{basis}.png"
     fig, axes = vit.plot_scores_clustered(tickers, basis=basis, metrics=metrics, include_total=include_total, sort_by=sort_by, title=title)
     fig.savefig(ensure_dir(out), bbox_inches="tight")
@@ -316,6 +380,14 @@ def tool_price_from_peer_multiples(peer_multiples_json: Optional[Dict[str, Any]]
 
 @app.tool(name="plot_peer_metric_boxplot", description="Boxplot of peer metric (PE|PS|EV_EBITDA) with target overlay; returns PNG.")
 def tool_plot_peer_metric_boxplot(tickers: List[str], target_ticker: str, metric: Literal["PE","PS","EV_EBITDA"]="PE", include_target_in_stats: bool=False, multiple_basis: Literal["ttm","forward_pe"]="ttm"):
+    """
+    Purpose:
+      Show peer distribution for a single multiple with target overlay.
+    Output:
+      PNG chart resource.
+    Interpretation:
+      Wide dispersion suggests heterogeneous peers; check diagnostics in peer_multiples.
+    """
     peers_all = sorted({target_ticker.upper(), *(t.upper() for t in tickers)})
     pm = vit.peer_multiples(peers_all, target_ticker=target_ticker, include_target=include_target_in_stats, multiple_basis=multiple_basis, as_df=True)
     pcd = pm["peer_comp_detail"]; bands = pm["peer_multiple_bands_wide"]
@@ -346,6 +418,14 @@ def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_
 
 @app.tool(name="plot_ev_observed_vs_implied", description="Plot observed EV vs implied EV (expects output from compare_to_market_ev); returns PNG.")
 def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+    """
+    Purpose:
+      Visualize observed EV vs implied EV from DCF.
+    Inputs:
+      - ev_df_json from compare_to_market_ev OR ticker to compute.
+    Output:
+      PNG chart resource.
+    """
     if ev_df_json is None:
         if not ticker:
             raise ValueError("Provide either ev_df_json OR ticker.")
@@ -383,6 +463,14 @@ def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]],
 
 @app.tool(name="plot_market_cap_observed_vs_implied_equity_val", description="Plot observed Market Cap vs implied Equity Value; returns PNG.")
 def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+    """
+    Purpose:
+      Visualize observed market cap vs implied equity value.
+    Inputs:
+      - evcap_df_json from compare_to_market_cap OR ticker to compute.
+    Output:
+      PNG chart resource.
+    """
     import pandas as pd
     if evcap_df_json is None:
         if not ticker:
@@ -479,6 +567,14 @@ def tool_dcf_sensitivity_grid(
 
 @app.tool(name="plot_dcf_scenarios_vs_price", description="Plot DCF scenarios vs current price; returns PNG.")
 def tool_plot_dcf_vs_price(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+    """
+    Purpose:
+      Plot Low/Mid/High DCF scenarios against current price.
+    Output:
+      PNG chart resource.
+    Interpretation:
+      If scenarios cluster far above/below price, review assumptions and guardrails.
+    """
     # Build audit DF via dcf_three_scenarios and get current price snapshot
     audit_df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     p1d, _, _ = vit._price_snapshots(ticker)
@@ -492,11 +588,23 @@ def tool_plot_dcf_vs_price(ticker: str, peer_tickers: Optional[List[str]]=None, 
 # ============================
 @app.tool(name="health_to_tables", description="Normalize a health report (new or legacy schema) into a tidy table.")
 def tool_health_to_tables(health_report: Any, sort: bool=True):
+    """
+    Purpose:
+      Convert health report schema into a tidy table for LLM consumption.
+    Output:
+      JSON records with Source/Ticker/Notes style columns.
+    """
     df = vit.health_to_tables(health_report, sort=sort, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
 @app.tool(name="health_to_markdown", description="Render a health report to Markdown.")
 def tool_health_to_markdown(health_report: Any):
+    """
+    Purpose:
+      Render health report into a Markdown table for human review.
+    Output:
+      Markdown string.
+    """
     md = vit.health_to_markdown(health_report)
     return [text_item(md)]
 
