@@ -26,3 +26,9 @@ Internal working notes live under `docs/internal/` and are not tracked in git.
 ## Contributor Expectations (Summary)
 - New modules should include function signatures, a minimal input/output example, and ADR references when relevant.
 - Keep plots deterministic where possible (stable ordering, no randomness).
+
+## MCP Tool Docstring Checklist (Stub)
+- Purpose: one sentence on what the tool returns.
+- Key inputs: list of the most important parameters and defaults.
+- Overrides: mention override dicts if supported (and the key names).
+- Interpretation: short guidance on reading outputs and warnings.
