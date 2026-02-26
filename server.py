@@ -157,6 +157,18 @@ def tool_hist_growth(tickers: Union[str, List[str]], min_years: int=3, analysis_
 # ============================
 @app.tool(name="compute_fundamentals_actuals", description="Compute fundamentals (absolute) for tickers.")
 def tool_compute_actuals(tickers: List[str], basis: Literal["annual","ttm"]="annual", save_csv: bool=False, analysis_report_date: Optional[str]=None, data_incomplete_threshold: Optional[float]=None):
+    """
+    Purpose:
+      Return raw fundamentals (profitability, growth, reinvestment, risk) as decimals.
+    Key inputs:
+      - tickers: list[str]
+      - basis: "annual" (multi-year averages) or "ttm" (trailing/point-in-time)
+      - data_incomplete_threshold: percent of missing metrics before data_incomplete=True
+    Output:
+      Table of metrics per ticker; values are decimals (0.15 = 15%).
+    Interpretation:
+      Use as the base layer for scoring and peer comparison; check Notes/data_incomplete flags.
+    """
     df = vit.compute_fundamentals_actuals(tickers, basis=basis, save_csv=False, as_df=True, analysis_report_date=analysis_report_date, data_incomplete_threshold=data_incomplete_threshold)
     content = [text_item(f"Fundamentals actuals for {', '.join(tickers)} (basis={basis})")]
     content.append(text_item(json.dumps(to_records_df(df), indent=2)))
@@ -169,6 +181,20 @@ def tool_compute_actuals(tickers: List[str], basis: Literal["annual","ttm"]="ann
 
 @app.tool(name="compute_fundamentals_scores", description="Score fundamentals for tickers (or merge with given actuals).")
 def tool_compute_scores(tickers: Optional[List[str]]=None, basis: Literal["annual","ttm"]="annual", merge_with_actuals: bool=False, analysis_report_date: Optional[str]=None, scoring_overrides: Optional[Dict[str, Any]]=None):
+    """
+    Purpose:
+      Compute 0–5 scores per metric plus factor rollups (profitability/growth/reinvestment/risk).
+    Key inputs:
+      - tickers: list[str]
+      - basis: "annual" or "ttm" (affects which inputs are used)
+      - scoring_overrides: optional dict to override thresholds/weights/recommendation cutoffs
+        Keys: thresholds, weights, data_incomplete_threshold, recommendation_cutoffs
+    Output:
+      Scored table; can optionally merge raw actuals via merge_with_actuals=True.
+    Interpretation:
+      Scores are absolute (not peer-relative). Higher is better. Use overrides to match
+      your research standards.
+    """
     # For MCP ergonomics we take 'tickers'; library supports DF/list/strings
     if not tickers:
         raise ValueError("Please provide tickers (list[str]).")
@@ -219,6 +245,19 @@ def tool_plot_scores_clustered(tickers: List[str], basis: Literal["annual","ttm"
 # ============================
 @app.tool(name="peer_multiples", description="Build peer multiples & valuation bands for a peer set (requires target_ticker).")
 def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: bool=False, multiple_basis: Literal["ttm","forward_pe"]="ttm", analysis_report_date: Optional[str]=None, diagnostics_overrides: Optional[Dict[str, Any]]=None):
+    """
+    Purpose:
+      Compute peer ratios (PE/PS/EV-EBITDA) and implied per-share valuation bands.
+    Key inputs:
+      - target_ticker: required (the company being valued)
+      - multiple_basis: "ttm" (default) or "forward_pe" (PE uses forwardPE when available)
+      - diagnostics_overrides: coverage/dispersion thresholds for peer-quality warnings
+    Output:
+      peer_comp_detail, peer_multiple_bands_wide, peer_comp_bands, diagnostics, notes.
+    Interpretation:
+      Bands are computed from peer-only set (target excluded unless include_target=True).
+      If eps_ttm or revenue_per_share_ttm is missing, PE/PS per-share bands may be sparse.
+    """
     res = vit.peer_multiples(tickers, target_ticker=target_ticker, include_target=include_target, multiple_basis=multiple_basis, diagnostics_overrides=diagnostics_overrides, as_df=True, analysis_report_date=analysis_report_date)
     pcd = res["peer_comp_detail"]; bands_wide = res["peer_multiple_bands_wide"]; comp_bands = res["peer_comp_bands"]
     # Write CSVs
@@ -250,6 +289,17 @@ def tool_peer_multiples(tickers: List[str], target_ticker: str, include_target: 
 
 @app.tool(name="price_from_peer_multiples", description="Compute implied per-share price bands (P25/P50/P75) from peer_multiples output.")
 def tool_price_from_peer_multiples(peer_multiples_json: Optional[Dict[str, Any]]=None, tickers: Optional[List[str]]=None, target_ticker: Optional[str]=None, include_target: bool=False, multiple_basis: Literal["ttm","forward_pe"]="ttm", analysis_report_date: Optional[str]=None, save_csv: bool=False):
+    """
+    Purpose:
+      Convert peer multiple bands into implied per-share price bands for a target.
+    Key inputs:
+      - peer_multiples_json OR (tickers + target_ticker)
+    Output:
+      Table with PE/PS/EV-EBITDA P25/P50/P75 implied per-share values plus Inputs_Used.
+    Interpretation:
+      Requires shares, revenue, earnings, EBITDA, debt/cash for the EV->Equity bridge.
+      Missing inputs will yield None for those bands.
+    """
     if peer_multiples_json is None:
         if not (tickers and target_ticker):
             raise ValueError("Provide either peer_multiples_json OR (tickers + target_ticker).")
@@ -279,6 +329,18 @@ def tool_plot_peer_metric_boxplot(tickers: List[str], target_ticker: str, metric
 # ============================
 @app.tool(name="compare_to_market_ev", description="Compute implied EV vs observed enterpriseValue from Yahoo.")
 def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+    """
+    Purpose:
+      Compare implied EV (DCF) vs observed EV and compute premium/discount.
+    Key inputs:
+      - growth: explicit terminal growth; otherwise uses FCF CAGR -> revenue CAGR -> fallback
+      - assumptions_overrides: dict of guardrails (e.g., terminal_growth_gap, growth_floor)
+    Output:
+      EV_Implied, Observed_EV, Premium_%, Valuation_Confidence, Notes, Assumptions_Used.
+    Interpretation:
+      Premium > 0 implies market pricing higher growth/lower risk; check Notes for
+      volatility, missing data, or guardrail caps.
+    """
     df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
@@ -299,6 +361,17 @@ def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Opt
 
 @app.tool(name="compare_to_market_cap", description="Compare implied EQUITY VALUE vs observed MARKET CAP (Yahoo).")
 def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]], years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+    """
+    Purpose:
+      Compare implied equity value (from implied EV) vs observed market cap.
+    Key inputs:
+      - ticker_or_evdf: ticker string or compare_to_market_ev output rows
+      - assumptions_overrides: dict of valuation guardrails
+    Output:
+      Equity_Implied, Observed_MarketCap, Premium_%, Valuation_Confidence, Notes.
+    Interpretation:
+      Uses EV->Equity bridge; missing shares/market cap yields warnings in Notes.
+    """
     # Accept a ticker string OR an ev_df_json (list[dict]) from compare_to_market_ev
     import pandas as pd
     if isinstance(ticker_or_evdf, str):
@@ -328,6 +401,19 @@ def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json
 # ============================
 @app.tool(name="dcf_three_scenarios", description="Compute Low/Mid/High per-share DCF for a ticker.")
 def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+    """
+    Purpose:
+      Compute Low/Mid/High DCF per-share values with WACC and growth guardrails.
+    Key inputs:
+      - peer_tickers: optional growth seeding from peers
+      - manual_baseline_fcf: override FCF baseline
+      - manual_growth_rates: [low, mid, high] overrides
+      - assumptions_overrides: dict of guardrails (growth_floor, terminal_growth_gap, etc.)
+    Output:
+      Scenario rows with Growth_Used, WACC_Used, Per_Share_Value, Assumptions_Used.
+    Interpretation:
+      Use Notes/Assumptions_Used to explain caps/floors or volatility effects.
+    """
     df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
@@ -346,6 +432,17 @@ def tool_dcf_sensitivity_grid(
     assumptions_overrides: Optional[Dict[str, Any]]=None,
     save_csv: bool=False,
 ):
+    """
+    Purpose:
+      Build a WACC x terminal growth grid to stress-test assumptions.
+    Key inputs:
+      - growth_values / wacc_values: optional explicit grids
+      - assumptions_overrides: guardrail caps (growth_floor, terminal_growth_gap, etc.)
+    Output:
+      grid_long (rows), grid_wide (matrix), inputs_used, notes.
+    Interpretation:
+      Cells may be capped/floored for stability; notes summarize how many.
+    """
     res = vit.dcf_sensitivity_grid(
         ticker,
         years=years,
