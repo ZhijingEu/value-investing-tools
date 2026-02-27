@@ -1,11 +1,13 @@
 # ValueInvestingTools
 
-> Featured article: **Building a Fundamental Analysis MCP Toolkit** — `https://medium.com/@zhijingeu/building-a-fundamental-analysis-mcp-toolkit-10e65e846e50`
+> **Featured article**
+> [![Read on Medium](https://img.shields.io/badge/Medium-Read%20Article-black?logo=medium&logoColor=white)](https://medium.com/@zhijingeu/building-a-fundamental-analysis-mcp-toolkit-10e65e846e50)
+>
+> **Building a Fundamental Analysis MCP Toolkit**  
+> A practitioner’s walkthrough of building a reproducible, auditable finance workflow using MCP tools.
 Value Investing Tools VIT is a Python library and STDIO MCP server that supports value investing principles based fundamental equity analysis: fetch and summarize financial data, benchmark against peers, run DCF valuations with scenarios, estimate Enterprise Value and Equity Value, and save charts/CSVs for reproducible workflows.
 
 Important Disclosure - This code was co-developed with review and refactoring support of ChatGPT-5 and Claude Sonnet-4
-
-Project direction and scope guardrails (North Star): `docs/NORTH_STAR.md`
 
 ## Table of Contents
 1. [Why this exists](#1-why-this-exists)
