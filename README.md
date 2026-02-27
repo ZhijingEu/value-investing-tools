@@ -1068,6 +1068,11 @@ This project ships in a few tiers to keep expectations clear:
 - **Preview**: newer modules or workflows that are usable but may change.
 - **Experimental**: early ideas or spikes that are not yet committed to long-term support.
 
+Current mapping:
+- **Stable**: `server.py` (STDIO MCP), `ValueInvestingTools.py` API, `vitlib/` fundamentals + scoring, peer multiples, EV/Equity bridge, DCF scenarios, health reporting, plots, orchestrator.
+- **Preview**: provider abstraction in `providers/` (Yahoo adapter + base scaffold); advanced DCF controls and diagnostics.
+- **Experimental**: planned ADR features not yet shipped (e.g., Forecast object, valuation profiles, HTTP/SSE transport).
+
 For the long-term evolution, see the Roadmap, which tracks the development phases and rationale.
 The phases describe planning sequence, not readiness.
 
