@@ -1061,6 +1061,16 @@ Use this when you need a full audit trail in one call. Ideal for:
 
 # 13. Notes, Roadmap, Contributing
 
+## Status & Readiness
+This project ships in a few tiers to keep expectations clear:
+
+- **Stable**: core MCP + valuation toolkit used in the demo notebook and test suite.
+- **Preview**: newer modules or workflows that are usable but may change.
+- **Experimental**: early ideas or spikes that are not yet committed to long-term support.
+
+For the long-term evolution, see the Roadmap, which tracks the development phases and rationale.
+The phases describe planning sequence, not readiness.
+
 ## Notes
 - This library is intended for educational and analytical use only. It does not constitute investment advice.
 - Outputs should always be interpreted alongside qualitative analysis (management quality, competitive dynamics, regulatory environment).

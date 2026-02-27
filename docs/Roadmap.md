@@ -6,6 +6,16 @@ This roadmap tracks target architecture from ADR-0001 through ADR-0006.
 It is a planning document, not a completion log.
 Product positioning and scope guardrails live in `docs/NORTH_STAR.md`.
 
+## How to Read This Roadmap
+This file tracks **development phases** only. Phases describe planning sequence and design decisions, not release readiness.
+For “what’s safe to use now,” rely on the README’s **Status & Readiness** labels (`Stable`, `Preview`, `Experimental`).
+
+## Phase Status Conventions
+- **Planned**: not started
+- **Active**: in progress
+- **Completed**: delivered to main
+- **Parked**: on hold, not dropped
+
 ## Current Implementation Snapshot
 
 Implemented in the current repository:
