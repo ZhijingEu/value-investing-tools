@@ -1,7 +1,7 @@
 # ValueInvestingTools
 
 > **Featured article**
-> [![Featured article cover](docs/assets/featured-article.webp)](https://medium.com/@zhijingeu/building-a-fundamental-analysis-mcp-toolkit-10e65e846e50)
+> <a href="https://medium.com/@zhijingeu/building-a-fundamental-analysis-mcp-toolkit-10e65e846e50"><img src="docs/assets/featured-article.webp" alt="Featured article cover" width="550"></a>
 > [![Read on Medium](https://img.shields.io/badge/Medium-Read%20Article-black?logo=medium&logoColor=white)](https://medium.com/@zhijingeu/building-a-fundamental-analysis-mcp-toolkit-10e65e846e50)
 >
 > **Building a Fundamental Analysis MCP Toolkit**  
