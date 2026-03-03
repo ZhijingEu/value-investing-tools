@@ -49,27 +49,19 @@ ValueInvestingTools addresses these gaps by:
 # 2. How to use this library
 This toolkit follows a stepwise workflow that mirrors how analysts typically think about a company:
 
-**Conceptual workflow (plain language)**:
-1. **Baseline the company** — pull a TTM vs historical snapshot to anchor the analysis.
-2. **User selects comparable peers** — choose companies with similar business model, size, and exposure.
-3. **Score fundamentals (0–5)** — normalize profitability, growth, reinvestment, and risk.
-4. **Triangulate valuation** — compare peer multiples, implied EV/Equity, and DCF scenarios.
-5. **Review data‑quality flags** — use health notes to spot missing data or fragile assumptions.
-6. **LLM/User weighs the evidence** — synthesize the outputs into a view and note sensitivities.
-
 1. Company snapshot -> look at TTM vs historical averages.
-2. Peer group comparisons -> put one company's numbers in context.
-3. Scoring fundamentals (0-5) -> normalize metrics to directly compare across firms.
+2. Peer group comparisons -> user selects comparable peers to put the target firm's numbers in context.
+3. Scoring fundamentals (0-5) -> normalize profitability, growth, reinvestment, and risk for cross-firm comparison.
 4. Visualize -> explore results with clustered bars, boxplots, and time-series plots.
-5. Drill down -> inspect trends in a single metric for a single company.
-6. Extend into valuation -> move beyond raw fundamentals:
-   - 6.1 Benchmark valuation multiples (PE, PS, EV/EBITDA) against peers.
-   - 6.2 Run DCF scenarios (Low/Mid/High) using perpetuity growth methods.
-   - 6.3 Estimate implied Enterprise Value from historical growth + FCF.
-   - 6.4 Translate EV -> Equity -> per-share value to see if the market looks rich or cheap.
-   - 6.5 Stress-test key assumptions with WACC x terminal growth sensitivity grids.
+5. Valuation triangulation -> move beyond raw fundamentals:
+   - 5.1 Benchmark valuation multiples (PE, PS, EV/EBITDA) against peers.
+   - 5.2 Run DCF scenarios (Low/Mid/High) using perpetuity growth methods.
+   - 5.3 Estimate implied Enterprise Value from historical growth + FCF.
+   - 5.4 Translate Enterprise Value -> Equity -> per-share value to see if the market looks rich or cheap.
+   - 5.5 Stress-test key assumptions with WACC x terminal growth sensitivity grids.
+6. Synthesize with qualitative sources (company reports, analyst reports, news) and factor in VIT health notes on missing data or fragile assumptions.
 
-This flow reflects how the library is organized: start with intrinsic factors, add comparative context, then use valuation models to connect fundamentals to price.
+The above flow reflects how the library is organized: start with intrinsic factors, add comparative context, then use valuation models to connect fundamentals to price.
 
 ## 2.1 Data Providers & Extensibility
 The current default data source is Yahoo Finance via `yfinance`. A provider abstraction exists in `providers/` to support future backends (e.g., Financial Modeling Prep) while keeping the analytics layer stable.

@@ -4,13 +4,18 @@ This document explains the theoretical foundations, key model choices, and defau
 
 This document explains the default numeric assumptions and guardrails used by VIT. It is intentionally concise and focused on what is defensible via external sources vs. what is engineering guardrail logic for stability.
 
-## Workflow Overview (Plain Language)
-1. **Baseline the company** — pull a TTM vs historical snapshot to anchor the analysis.
-2. **User selects comparable peers** — choose companies with similar business model, size, and exposure.
-3. **Score fundamentals (0–5)** — normalize profitability, growth, reinvestment, and risk.
-4. **Triangulate valuation** — compare peer multiples, implied EV/Equity, and DCF scenarios.
-5. **Review data‑quality flags** — use health notes to spot missing data or fragile assumptions.
-6. **LLM/User weighs the evidence** — synthesize the outputs into a view and note sensitivities.
+## Workflow Overview
+1. Company snapshot -> look at TTM vs historical averages.
+2. Peer group comparisons -> user selects comparable peers to put the target firm's numbers in context.
+3. Scoring fundamentals (0-5) -> normalize profitability, growth, reinvestment, and risk for cross-firm comparison.
+4. Visualize -> explore results with clustered bars, boxplots, and time-series plots.
+5. Valuation triangulation -> move beyond raw fundamentals:
+   - 5.1 Benchmark valuation multiples (PE, PS, EV/EBITDA) against peers.
+   - 5.2 Run DCF scenarios (Low/Mid/High) using perpetuity growth methods.
+   - 5.3 Estimate implied Enterprise Value from historical growth + FCF.
+   - 5.4 Translate Enterprise Value -> Equity -> per-share value to see if the market looks rich or cheap.
+   - 5.5 Stress-test key assumptions with WACC x terminal growth sensitivity grids.
+6. Synthesize with qualitative sources (company reports, analyst reports, news) and factor in VIT health notes on missing data or fragile assumptions.
 
 ## Scope & Time Sensitivity
 Some defaults (risk-free rate and equity risk premium) are market-dependent and should be refreshed periodically. The values below are anchored to public references as of early 2026.
