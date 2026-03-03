@@ -4,6 +4,14 @@ This document explains the theoretical foundations, key model choices, and defau
 
 This document explains the default numeric assumptions and guardrails used by VIT. It is intentionally concise and focused on what is defensible via external sources vs. what is engineering guardrail logic for stability.
 
+## Workflow Overview (Plain Language)
+1. **Baseline the company** — pull a TTM vs historical snapshot to anchor the analysis.
+2. **User selects comparable peers** — choose companies with similar business model, size, and exposure.
+3. **Score fundamentals (0–5)** — normalize profitability, growth, reinvestment, and risk.
+4. **Triangulate valuation** — compare peer multiples, implied EV/Equity, and DCF scenarios.
+5. **Review data‑quality flags** — use health notes to spot missing data or fragile assumptions.
+6. **LLM/User weighs the evidence** — synthesize the outputs into a view and note sensitivities.
+
 ## Scope & Time Sensitivity
 Some defaults (risk-free rate and equity risk premium) are market-dependent and should be refreshed periodically. The values below are anchored to public references as of early 2026.
 

@@ -49,6 +49,14 @@ ValueInvestingTools addresses these gaps by:
 # 2. How to use this library
 This toolkit follows a stepwise workflow that mirrors how analysts typically think about a company:
 
+**Conceptual workflow (plain language)**:
+1. **Baseline the company** — pull a TTM vs historical snapshot to anchor the analysis.
+2. **User selects comparable peers** — choose companies with similar business model, size, and exposure.
+3. **Score fundamentals (0–5)** — normalize profitability, growth, reinvestment, and risk.
+4. **Triangulate valuation** — compare peer multiples, implied EV/Equity, and DCF scenarios.
+5. **Review data‑quality flags** — use health notes to spot missing data or fragile assumptions.
+6. **LLM/User weighs the evidence** — synthesize the outputs into a view and note sensitivities.
+
 1. Company snapshot -> look at TTM vs historical averages.
 2. Peer group comparisons -> put one company's numbers in context.
 3. Scoring fundamentals (0-5) -> normalize metrics to directly compare across firms.
