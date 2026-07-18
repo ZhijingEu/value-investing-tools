@@ -1,59 +1,48 @@
-# ADR-0002: Piotroski F-Score – Stand-Alone Reference Module
+# ADR-0002: Piotroski F-Score Deferral
 
 ## Status
-Proposed (Draft, Not Yet Implemented in code as of 2026-02-22)
+Deferred as of 2026-07-18
 
 ## Context
-Following ADR-0001, the Altman Z-Score and Beneish M-Score are now integrated directly into the **Risk** pillar of the 4×4 fundamentals framework.  
-However, the **Piotroski F-Score** remains a valuable, empirically tested signal of financial strength among value stocks.
+Piotroski F-Score is a recognized accounting-quality screen built from nine binary financial-statement signals. Its usefulness comes from being canonical and comparable: a 0-9 score means the same thing across implementations only when all nine criteria are calculated faithfully.
 
-Integrating the F-Score into the 4×4 framework would blur conceptual boundaries and reduce interpretability.  
-Instead, it will be implemented as an **independent reference function and visualization module** that complements, but does not affect, the composite fundamentals score.
+VIT's default data path is intentionally low-friction and local-agent friendly, using yfinance without user API keys or subscriptions. That design supports the repo's zero-setup value proposition, but it does not reliably provide every input needed for a canonical Piotroski implementation across tickers.
 
----
+The main blockers are:
+- historical shares outstanding / share issuance data for the no-dilution signal;
+- consistent long-term debt tagging across companies;
+- occasional gaps or alternate labels for current assets, current liabilities, gross profit, and revenue;
+- the need to align annual reporting periods cleanly across income statement, balance sheet, and cash-flow data.
 
 ## Decision
-Implement a dedicated Piotroski F-Score module that reproduces all **nine binary signals** exactly as defined in Piotroski (2000).
+Do not implement Piotroski F-Score in the current yfinance-only default workflow.
 
-### Function Signatures
-```python
-piotroski_fscore(ticker_or_statements) -> {"total": int(0..9), "signals": {...}}
-plot_piotroski_fscore(result_dict) -> matplotlib.figure.Figure
+VIT should not ship a custom or modified F-Score under the Piotroski name. A partial or proxy-based score would overlap with the existing fundamentals scoring framework while reducing methodological clarity.
 
+Piotroski may be reconsidered only if one of the following changes:
+- a provider adapter supplies all nine canonical inputs with reliable annual history;
+- an optional SEC EDGAR/XBRL provider is implemented with robust ticker-to-CIK mapping, concept aliases, fiscal-year alignment, and duplicate/restatement handling;
+- an optional FMP or equivalent provider is added, with clear API-key handling and documented coverage limits.
 
-## Model Overview
+## Canonical Criteria
 
-| # | Signal | Category | Description | Good Condition (Score = 1) |
-|---|---------|-----------|--------------|-----------------------------|
-| 1 | ROA > 0 | Profitability | Positive Return on Assets | ROA > 0 |
-| 2 | Δ ROA > 0 | Profitability | Improving ROA vs prior year | ROA increase |
-| 3 | CFO > 0 | Profitability | Positive operating cash flow | CFO > 0 |
-| 4 | CFO > ROA | Profitability | Quality of earnings | CFO > ROA |
-| 5 | Δ Leverage < 0 | Leverage | Lower leverage (YoY) | Debt reduction |
-| 6 | Δ Current Ratio > 0 | Liquidity | Improved short-term liquidity | Ratio increase |
-| 7 | No new shares issued | Leverage | No equity dilution | Shares unchanged |
-| 8 | Δ Gross Margin > 0 | Efficiency | Improving margins | Margin increase |
-| 9 | Δ Asset Turnover > 0 | Efficiency | Better asset utilisation | Turnover increase |
-
-Total F-Score = sum of nine signals (0 – 9).
-Higher values indicate stronger fundamentals and financial health.
-
----
-
-## Implementation Notes
-
-- Compute from the same financial statements used in the fundamentals module.
-- Use the latest two reporting periods for all “Δ” comparisons.
-- Output both the total score and the individual component flags for transparency.
-- plot_piotroski_fscore() visualises each binary signal (bar or traffic-light chart) plus the aggregate score.
-- Integrate into notebooks and orchestrator outputs as an optional “Reference Module – Piotroski F-Score.”
-
----
+| # | Signal | Required Inputs | Current Default Data Risk |
+|---|---|---|---|
+| 1 | ROA > 0 | Net income, beginning/average assets | Low |
+| 2 | CFO > 0 | Operating cash flow | Low |
+| 3 | Delta ROA > 0 | Two years of net income and assets | Low |
+| 4 | CFO > net income | Operating cash flow, net income | Low |
+| 5 | Leverage down | Long-term debt, assets, two years | Medium |
+| 6 | Current ratio up | Current assets, current liabilities, two years | Medium |
+| 7 | No new shares issued | historical shares outstanding / issuance | High |
+| 8 | Gross margin up | Gross profit or revenue and COGS, two years | Medium |
+| 9 | Asset turnover up | Revenue, assets, two years | Low |
 
 ## Consequences
-- Adds a credible, easily interpreted benchmark without overlapping with the 4×4 framework.
-- Enhances diagnostic insight for value-oriented investors.
-- Minimal maintenance overhead (inputs already available from existing parsers).
-- Provides a consistent extension point for future empirical or academic score modules.
+- Avoids presenting a non-canonical score as if it were Piotroski F-Score.
+- Preserves VIT's positioning as an auditable, reproducible toolkit rather than a loose collection of heuristic screens.
+- Keeps focus on the existing fundamentals, peer, valuation, data-health, and provenance layers.
+- Leaves a clear re-entry path if provider coverage changes.
 
-
+## Related Notes
+If future work adds SEC EDGAR/XBRL support, treat Piotroski as a provider-validation project first and a scoring project second. The first deliverable should be a field-availability report, not the score itself.

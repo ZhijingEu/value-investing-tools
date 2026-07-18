@@ -27,10 +27,9 @@ Adopt a **dual-mode transport design** for MCP integration:
 
 1. **Maintain existing local server (`server.py`)**
    - Keep stdio transport as the default.  
-   - Expose new fundamentals, Piotroski, and valuation functions via MCP tool registration:
+   - Expose new fundamentals and valuation functions via MCP tool registration:
      ```python
      mcp.register_tool("compute_fundamentals_score", compute_fundamentals_score)
-     mcp.register_tool("piotroski_fscore", piotroski_fscore)
      mcp.register_tool("compare_to_market_ev", compare_to_market_ev)
      ```
    - Continue to run using:

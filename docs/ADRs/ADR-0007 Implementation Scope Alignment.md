@@ -7,7 +7,7 @@ Accepted
 2026-02-22
 
 ## Context
-Repository docs and ADRs describe a planned 4x4 fundamentals redesign (ADR-0001) and Piotroski module (ADR-0002).  
+Repository docs and ADRs describe a planned 4x4 fundamentals redesign (ADR-0001) and a deferred Piotroski module (ADR-0002).
 The current production code in `ValueInvestingTools.py` still exposes the existing 12-metric scoring pipeline via:
 - `compute_fundamentals_actuals(...)`
 - `compute_fundamentals_scores(...)`

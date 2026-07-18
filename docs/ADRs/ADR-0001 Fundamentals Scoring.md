@@ -129,6 +129,6 @@ When analyzing financial-sector tickers:
 ## Consequences
 - Balanced, MECE, production-ready fundamentals framework.  
 - Risk pillar now anchors on Altman Z and Beneish M (internal sub-factors).  
-- Remaining reference model = Piotroski F-Score (see ADR-0002).  
+- Piotroski F-Score is deferred until reliable canonical provider coverage exists (see ADR-0002).
 
 

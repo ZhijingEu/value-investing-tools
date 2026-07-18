@@ -23,9 +23,9 @@ Implemented in the current repository:
 - Valuation flows: `dcf_three_scenarios()`, `compare_to_market_ev()`, `compare_to_market_cap()`.
 - MCP stdio server in `server.py`.
 
-Not implemented yet (still planned):
+Not implemented yet (planned or deferred):
 - ADR-0001 full 4x4 fundamentals framework (`compute_fundamentals_score` singular API).
-- ADR-0002 Piotroski module (`piotroski_fscore`, `plot_piotroski_fscore`).
+- ADR-0002 Piotroski module deferred pending reliable canonical data coverage.
 - ADR-0004 valuation profile system and `valuation_profile` metadata.
 - ADR-0005 `Forecast` dataclass pipeline.
 - ADR-0006 HTTP/SSE server companion (`server_http.py`) and shared manifest tests.
@@ -76,19 +76,19 @@ Completion criteria:
 ---
 
 ## Phase 3 - Piotroski F-Score (ADR-0002)
-Status: `Planned`
+Status: `Deferred`
 
 Goal:
-- Add standalone Piotroski reference module.
+- Preserve methodological integrity by not shipping a custom or incomplete Piotroski F-Score under the canonical name.
 
 Targets:
-- `piotroski_fscore(ticker|statements)`
-- `plot_piotroski_fscore(...)`
-- Optional orchestrator integration
+- No implementation in the yfinance-only default workflow.
+- Revisit only if SEC EDGAR/XBRL, FMP, or another provider adapter supplies all nine canonical inputs reliably.
+- If revisited, start with a provider field-availability report before writing scoring logic.
 
 Completion criteria:
-- Component-flag unit tests (all 9 signals)
-- README references and attribution section updates
+- ADR-0002 records the deferral rationale and re-entry conditions.
+- Public docs do not imply Piotroski is part of the live scoring API.
 
 ---
 
@@ -99,7 +99,7 @@ Goal:
 - Produce consolidated fundamentals-first reports.
 
 Targets:
-- Standardized flow: Absolute -> Peer -> (Optional) Piotroski
+- Standardized flow: Absolute -> Peer -> Valuation, with optional reference modules only where data coverage is reliable
 - Harmonized JSON/DataFrame/figure outputs
 - Data-health section in report outputs
 
