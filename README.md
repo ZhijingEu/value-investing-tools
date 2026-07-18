@@ -5,8 +5,9 @@
 > [![Read on Medium](https://img.shields.io/badge/Medium-Read%20Article-black?logo=medium&logoColor=white)](https://medium.com/@zhijingeu/building-a-fundamental-analysis-mcp-toolkit-10e65e846e50)
 >
 > **Building a Fundamental Analysis MCP Toolkit**  
-> A practitioner’s walkthrough of building a reproducible, auditable finance workflow using MCP tools.
-Value Investing Tools VIT is a Python library and STDIO MCP server that supports value investing principles based fundamental equity analysis: fetch and summarize financial data, benchmark against peers, run DCF valuations with scenarios, estimate Enterprise Value and Equity Value, and save charts/CSVs for reproducible workflows.
+> A practitioner's walkthrough of building a reproducible, auditable finance workflow using MCP tools.
+
+ValueInvestingTools (VIT) is a Python library and STDIO MCP server for value-investing-based fundamental equity analysis. It fetches and summarizes financial data, benchmarks companies against peers, runs DCF valuation scenarios, estimates Enterprise Value and Equity Value, and saves charts/CSVs for reproducible workflows.
 
 Important Disclosure - This code was co-developed with review and refactoring support of ChatGPT-5 and Claude Sonnet-4
 
@@ -33,7 +34,7 @@ ValueInvestingTools (VIT) is a Python library for fundamental equity analysis th
 
 VIT fetches statements, builds clean data sets, and runs DCF and peer-multiple valuations with ready-to-plot outputs. 
 
-This repo also ships an MCP server so STDIO-capable LLM clients can call VIT functions as tools to perform calculations, generate charts & artifacts and saves outputs for reproducible workflows (Note that there is a separate readme within this repo for the MCP Server Refer to the **MCP Server Setup Guide** -> [VIT-MCP_Server_SetUp_README.md](https://github.com/ZhijingEu/value-investing-tools/blob/main/VIT-MCP_Server_SetUp_README.md)
+This repo also ships an MCP server so STDIO-capable LLM clients can call VIT functions as tools to perform calculations, generate charts/artifacts, and save outputs for reproducible workflows. For setup details, see the **MCP Server Setup Guide** -> [VIT-MCP_Server_SetUp_README.md](https://github.com/ZhijingEu/value-investing-tools/blob/main/VIT-MCP_Server_SetUp_README.md).
 
 Most free data sources (e.g., Yahoo Finance) provide quick snapshots, but they:
 - Mix TTM and point-in-time values inconsistently.
@@ -154,7 +155,7 @@ If this prints a non-empty table, the data layer, calculation flow, and imports 
 - **Statements**: Income statement, balance sheet, cash flow.
 - **Estimates**: PEG ratio uses forward EPS growth from Refinitiv (via Yahoo).
 - **Peer-normalization**: Not applied in scoring - all cutoffs are absolute, not relative.
-- **Growth Rate Methodology** assumes FCF-First Approach where growth assumptions prioritize Free Cash Flow CAGR over revenue CAGR when calculating terminal values to reflect that shareholder value derives from cash generation, not revenue expansion. Revenue growth that requires proportional increases in capital expenditure or working capital provides less value than efficient cash conversion. (More info within Section 9)
+- **Growth Rate Methodology** uses an FCF-first approach: growth assumptions prioritize Free Cash Flow CAGR over revenue CAGR when calculating terminal values because shareholder value depends on cash generation, not revenue expansion alone. Revenue growth that requires proportional increases in capital expenditure or working capital provides less value than efficient cash conversion. See Section 9 and `Methodology.md` for guardrails and override details.
 
 ## Interpretation caveats
 
@@ -725,7 +726,7 @@ Returns DataFrame with columns: Scenario, Growth_Used, WACC_Used, Per_Share_Valu
 - `risk_free_rate=0.0418, equity_risk_premium=0.0423`.
 - `target_cagr_fallback=0.02` if peer/target growth is unavailable.
 - `peer_tickers=[...]` optionally seeds growth from peer FCF CAGRs (P25/P50/P75).
-- Growth always capped at WACC - 0.5%.
+- Growth is capped by terminal-growth guardrails: by default, `g <= WACC - 0.5%` and also `g <= risk_free_rate + 0.5%` when `terminal_growth_cap_mode="min_wacc_rfr"`.
 - Requires beta; missing beta -> error.
 - Shared valuation defaults are exposed via `valuation_defaults(...)` for auditability.
 - `assumptions_as_of` can be passed to valuation functions to stamp the assumptions date in outputs.
