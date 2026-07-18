@@ -21,7 +21,7 @@ This document explains the default numeric assumptions and guardrails used by VI
 Some defaults (risk-free rate and equity risk premium) are market-dependent and should be refreshed periodically. The values below are anchored to public references as of early 2026.
 
 ## Market-Based Defaults (Cited)
-These defaults are used in `VALUATION_DEFAULTS` and in MCP tool defaults. They can be overridden per call.
+These defaults are loaded from `data/damodaran_macro.json` into `VALUATION_DEFAULTS` when VIT starts, and are also reflected in MCP tool defaults. They can be overridden per call. If the JSON is edited while the MCP server is running, restart the server for the new defaults to apply.
 
 - Risk-free rate (`risk_free_rate`): **4.18%**
   - Rationale: 10-year U.S. Treasury yield at 4.18% (Damodaran reference).

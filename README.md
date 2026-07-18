@@ -149,6 +149,7 @@ If this prints a non-empty table, the data layer, calculation flow, and imports 
 ## Assumptions & Data Sources
 
 - **Source**: Yahoo Finance (via yfinance Python library).
+- **Macro defaults**: Risk-free rate and equity risk premium are loaded from `data/damodaran_macro.json` at startup and echoed in valuation assumptions.
 - **Range**: 3-5 most recent fiscal years plus TTM where relevant.
 - **Statements**: Income statement, balance sheet, cash flow.
 - **Estimates**: PEG ratio uses forward EPS growth from Refinitiv (via Yahoo).

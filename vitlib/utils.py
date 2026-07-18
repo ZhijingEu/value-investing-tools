@@ -213,14 +213,58 @@ def to_records(obj, analysis_report_date: Optional[str] = None, schema_version: 
 
 
 # Centralized valuation defaults (can be overridden per call).
-VALUATION_DEFAULTS: Dict[str, float] = {
+DEFAULT_MACRO_INPUTS: Dict[str, Any] = {
+    "as_of": "2026-01",
     "risk_free_rate": 0.0418,
     "equity_risk_premium": 0.0423,
+    "source": "Damodaran public implied ERP update, Jan 2026",
+    "config_path": "data/damodaran_macro.json",
+    "load_status": "fallback",
+}
+
+
+def _load_macro_inputs() -> Dict[str, Any]:
+    """
+    Load date-stamped macro assumptions once at import time.
+
+    A running MCP process therefore uses one stable assumption set. To refresh
+    after editing the JSON, restart the MCP server or pass explicit overrides.
+    """
+    cfg_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "data", "damodaran_macro.json")
+    )
+    payload = dict(DEFAULT_MACRO_INPUTS)
+    payload["config_path"] = os.path.relpath(cfg_path, os.path.dirname(os.path.dirname(__file__)))
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+        rf = _safe_float(raw.get("risk_free_rate"))
+        erp = _safe_float(raw.get("equity_risk_premium"))
+        if rf is None or erp is None:
+            raise ValueError("risk_free_rate and equity_risk_premium must be numeric")
+        payload.update({
+            "as_of": str(raw.get("as_of") or payload["as_of"]),
+            "risk_free_rate": rf,
+            "equity_risk_premium": erp,
+            "source": str(raw.get("source") or payload["source"]),
+            "load_status": "loaded",
+        })
+    except Exception as exc:
+        payload["load_status"] = "fallback"
+        payload["load_error"] = str(exc)
+    return payload
+
+
+MACRO_INPUTS = _load_macro_inputs()
+
+VALUATION_DEFAULTS: Dict[str, float] = {
+    "risk_free_rate": float(MACRO_INPUTS["risk_free_rate"]),
+    "equity_risk_premium": float(MACRO_INPUTS["equity_risk_premium"]),
     "target_cagr_fallback": 0.020,
     "fcf_window_years": 3,
     "terminal_growth_gap": 0.005,  # g <= WACC - gap
 }
-VALUATION_ASSUMPTIONS_SCHEMA_VERSION = "1.0"
+VALUATION_ASSUMPTIONS_SCHEMA_VERSION = "1.1"
 
 
 def _valuation_assumptions_snapshot_id(payload: Dict[str, Any]) -> str:
@@ -233,6 +277,8 @@ def _valuation_assumptions_snapshot_id(payload: Dict[str, Any]) -> str:
         "fcf_window_years": int(payload.get("fcf_window_years")) if payload.get("fcf_window_years") is not None else None,
         "terminal_growth_gap": _safe_float(payload.get("terminal_growth_gap")),
         "assumptions_schema_version": payload.get("assumptions_schema_version", VALUATION_ASSUMPTIONS_SCHEMA_VERSION),
+        "macro_as_of": payload.get("macro_as_of"),
+        "macro_source": payload.get("macro_source"),
     }
     raw = json.dumps(material, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
@@ -251,6 +297,8 @@ def valuation_defaults(
     """
     Return a normalized assumptions payload for valuation outputs and audits.
     """
+    rf_source = "macro_config" if risk_free_rate is None else "user_override"
+    erp_source = "macro_config" if equity_risk_premium is None else "user_override"
     payload = {
         "as_of_date": as_of_date or _today_iso(),
         "risk_free_rate": VALUATION_DEFAULTS["risk_free_rate"] if risk_free_rate is None else float(risk_free_rate),
@@ -260,7 +308,27 @@ def valuation_defaults(
         "terminal_growth_gap": VALUATION_DEFAULTS["terminal_growth_gap"] if terminal_growth_gap is None else float(terminal_growth_gap),
         "assumptions_schema_version": VALUATION_ASSUMPTIONS_SCHEMA_VERSION,
         "assumptions_source": "ValueInvestingTools.valuation_defaults",
+        "macro_as_of": MACRO_INPUTS.get("as_of"),
+        "macro_source": MACRO_INPUTS.get("source"),
+        "macro_config_path": MACRO_INPUTS.get("config_path"),
+        "macro_load_status": MACRO_INPUTS.get("load_status"),
+        "macro_inputs": {
+            "risk_free_rate": {
+                "value": VALUATION_DEFAULTS["risk_free_rate"] if risk_free_rate is None else float(risk_free_rate),
+                "source": rf_source,
+                "source_detail": MACRO_INPUTS.get("source") if risk_free_rate is None else "user supplied function argument",
+                "as_of": MACRO_INPUTS.get("as_of") if risk_free_rate is None else as_of_date or _today_iso(),
+            },
+            "equity_risk_premium": {
+                "value": VALUATION_DEFAULTS["equity_risk_premium"] if equity_risk_premium is None else float(equity_risk_premium),
+                "source": erp_source,
+                "source_detail": MACRO_INPUTS.get("source") if equity_risk_premium is None else "user supplied function argument",
+                "as_of": MACRO_INPUTS.get("as_of") if equity_risk_premium is None else as_of_date or _today_iso(),
+            },
+        },
     }
+    if MACRO_INPUTS.get("load_error"):
+        payload["macro_load_error"] = MACRO_INPUTS.get("load_error")
     payload["assumptions_snapshot_id"] = _valuation_assumptions_snapshot_id(payload)
     return payload
 
@@ -298,6 +366,8 @@ __all__ = [
     '_fcf_series_from_cashflow',
     '_pct_from_info',
     'to_records',
+    'DEFAULT_MACRO_INPUTS',
+    'MACRO_INPUTS',
     'VALUATION_DEFAULTS',
     'VALUATION_ASSUMPTIONS_SCHEMA_VERSION',
     '_valuation_assumptions_snapshot_id',

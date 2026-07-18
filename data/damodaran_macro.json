@@ -1,0 +1,6 @@
+{
+  "as_of": "2026-01",
+  "risk_free_rate": 0.0418,
+  "equity_risk_premium": 0.0423,
+  "source": "Damodaran public implied ERP update, Jan 2026"
+}

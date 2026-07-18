@@ -15,6 +15,11 @@ class TestValuationDefaults(unittest.TestCase):
         self.assertIn("assumptions_schema_version", payload)
         self.assertIn("assumptions_source", payload)
         self.assertIn("assumptions_snapshot_id", payload)
+        self.assertEqual(payload["macro_as_of"], "2026-01")
+        self.assertEqual(payload["macro_load_status"], "loaded")
+        self.assertIn("macro_inputs", payload)
+        self.assertEqual(payload["macro_inputs"]["risk_free_rate"]["source"], "macro_config")
+        self.assertEqual(payload["macro_inputs"]["equity_risk_premium"]["source"], "macro_config")
         self.assertTrue(str(payload["assumptions_snapshot_id"]).startswith("vit-val-"))
 
     def test_defaults_payload_accepts_overrides(self):
@@ -30,7 +35,9 @@ class TestValuationDefaults(unittest.TestCase):
         self.assertEqual(payload["equity_risk_premium"], 0.0417)
         self.assertEqual(payload["target_cagr_fallback"], 0.018)
         self.assertEqual(payload["fcf_window_years"], 2)
-        self.assertEqual(payload["assumptions_schema_version"], "1.0")
+        self.assertEqual(payload["assumptions_schema_version"], "1.1")
+        self.assertEqual(payload["macro_inputs"]["risk_free_rate"]["source"], "user_override")
+        self.assertEqual(payload["macro_inputs"]["equity_risk_premium"]["source"], "user_override")
 
     def test_assumptions_snapshot_id_is_stable_and_changes_on_input_change(self):
         p1 = vit.valuation_defaults(

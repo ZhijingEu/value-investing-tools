@@ -400,7 +400,7 @@ def tool_plot_peer_metric_boxplot(tickers: List[str], target_ticker: str, metric
 # EV / Market Cap
 # ============================
 @app.tool(name="compare_to_market_ev", description="Compute implied EV vs observed enterpriseValue from Yahoo.")
-def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_rate: float=vit.VALUATION_DEFAULTS["risk_free_rate"], equity_risk_premium: float=vit.VALUATION_DEFAULTS["equity_risk_premium"], growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     """
     Purpose:
       Compare implied EV (DCF) vs observed EV and compute premium/discount.
@@ -417,7 +417,7 @@ def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
 @app.tool(name="plot_ev_observed_vs_implied", description="Plot observed EV vs implied EV (expects output from compare_to_market_ev); returns PNG.")
-def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=vit.VALUATION_DEFAULTS["risk_free_rate"], equity_risk_premium: float=vit.VALUATION_DEFAULTS["equity_risk_premium"], growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     """
     Purpose:
       Visualize observed EV vs implied EV from DCF.
@@ -440,7 +440,7 @@ def tool_plot_ev_observed_vs_implied(ticker: Optional[str]=None, ev_df_json: Opt
     return image_items_for_png(out)
 
 @app.tool(name="compare_to_market_cap", description="Compare implied EQUITY VALUE vs observed MARKET CAP (Yahoo).")
-def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]], years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]], years: Optional[int]=None, risk_free_rate: float=vit.VALUATION_DEFAULTS["risk_free_rate"], equity_risk_premium: float=vit.VALUATION_DEFAULTS["equity_risk_premium"], growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     """
     Purpose:
       Compare implied equity value (from implied EV) vs observed market cap.
@@ -462,7 +462,7 @@ def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]],
     return [text_item(json.dumps(to_records_df(df), indent=2))]
 
 @app.tool(name="plot_market_cap_observed_vs_implied_equity_val", description="Plot observed Market Cap vs implied Equity Value; returns PNG.")
-def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json: Optional[List[Dict[str, Any]]]=None, years: Optional[int]=None, risk_free_rate: float=vit.VALUATION_DEFAULTS["risk_free_rate"], equity_risk_premium: float=vit.VALUATION_DEFAULTS["equity_risk_premium"], growth: Optional[float]=None, target_cagr_fallback: float=0.02, use_average_fcf_years: Optional[int]=3, volatility_threshold: float=0.5, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     """
     Purpose:
       Visualize observed market cap vs implied equity value.
@@ -488,7 +488,7 @@ def tool_plot_mktcap_vs_implied_equity(ticker: Optional[str]=None, evcap_df_json
 # DCF
 # ============================
 @app.tool(name="dcf_three_scenarios", description="Compute Low/Mid/High per-share DCF for a ticker.")
-def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=vit.VALUATION_DEFAULTS["risk_free_rate"], equity_risk_premium: float=vit.VALUATION_DEFAULTS["equity_risk_premium"], target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     """
     Purpose:
       Compute Low/Mid/High DCF per-share values with WACC and growth guardrails.
@@ -509,8 +509,8 @@ def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None
 def tool_dcf_sensitivity_grid(
     ticker: str,
     years: int=5,
-    risk_free_rate: float=0.0418,
-    equity_risk_premium: float=0.0423,
+    risk_free_rate: float=vit.VALUATION_DEFAULTS["risk_free_rate"],
+    equity_risk_premium: float=vit.VALUATION_DEFAULTS["equity_risk_premium"],
     growth: Optional[float]=None,
     target_cagr_fallback: float=0.02,
     use_average_fcf_years: Optional[int]=3,
@@ -566,7 +566,7 @@ def tool_dcf_sensitivity_grid(
     return content
 
 @app.tool(name="plot_dcf_scenarios_vs_price", description="Plot DCF scenarios vs current price; returns PNG.")
-def tool_plot_dcf_vs_price(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=0.0418, equity_risk_premium: float=0.0423, target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
+def tool_plot_dcf_vs_price(ticker: str, peer_tickers: Optional[List[str]]=None, years: int=5, risk_free_rate: float=vit.VALUATION_DEFAULTS["risk_free_rate"], equity_risk_premium: float=vit.VALUATION_DEFAULTS["equity_risk_premium"], target_cagr_fallback: float=0.02, fcf_window_years: Optional[int]=3, manual_baseline_fcf: Optional[float]=None, manual_growth_rates: Optional[List[float]]=None, assumptions_as_of: Optional[str]=None, assumptions_overrides: Optional[Dict[str, Any]]=None):
     """
     Purpose:
       Plot Low/Mid/High DCF scenarios against current price.
