@@ -29,6 +29,9 @@ Important Disclosure - This code was co-developed with review and refactoring su
 13. [Notes, Roadmap, Contributing](#13-notes-roadmap-contributing)
 14. [License](#14-license)
 
+> **Update Jul 2026**
+> VIT now includes dated macro valuation defaults, stronger calculation-hygiene guardrails, and `Run_Manifest` audit payloads for valuation/orchestrator outputs. Piotroski F-Score is intentionally deferred until the provider layer can support all nine canonical inputs reliably.
+
 # 1. Why this exists
 ValueInvestingTools (VIT) is a Python library for fundamental equity analysis that supports workflows such as valuation scenarios, observed vs. implied EV, peer benchmarking, and exportable visuals/data. 
 
