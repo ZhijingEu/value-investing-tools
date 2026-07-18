@@ -20,6 +20,7 @@ from vitlib.utils import (
     _provider_ticker,
     to_records,
     valuation_defaults,
+    build_run_manifest,
     VALUATION_DEFAULTS,
 )
 from vitlib.peers import _pull_company_snapshot
@@ -201,6 +202,76 @@ def _fcf_cagr_from_series(fcf_series: pd.Series) -> Optional[float]:
     return cagr
 
 
+def _snapshot_data_as_of(snap: Dict[str, Any], analysis_report_date: str) -> Dict[str, Any]:
+    """Extract lightweight data dating context from provider snapshots."""
+    data_as_of: Dict[str, Any] = {"analysis_report_date": analysis_report_date}
+    for key, label in (
+        ("financials", "financials_period_end"),
+        ("cashflow", "cashflow_period_end"),
+        ("balance", "balance_sheet_period_end"),
+    ):
+        df = snap.get(key)
+        if isinstance(df, pd.DataFrame) and len(df.columns) > 0:
+            data_as_of[label] = str(df.columns[0])
+    return data_as_of
+
+
+def _valuation_user_override_keys(
+    *,
+    risk_free_rate: float,
+    equity_risk_premium: float,
+    target_cagr_fallback: float,
+    fcf_window_years: Optional[int],
+    assumptions_overrides: Optional[Dict[str, Any]],
+) -> List[str]:
+    """Infer assumption keys that differ from VIT defaults for manifest provenance."""
+    keys: List[str] = []
+    if risk_free_rate != VALUATION_DEFAULTS["risk_free_rate"]:
+        keys.append("risk_free_rate")
+    if equity_risk_premium != VALUATION_DEFAULTS["equity_risk_premium"]:
+        keys.append("equity_risk_premium")
+    if target_cagr_fallback != VALUATION_DEFAULTS["target_cagr_fallback"]:
+        keys.append("target_cagr_fallback")
+    if fcf_window_years != VALUATION_DEFAULTS["fcf_window_years"]:
+        keys.append("fcf_window_years")
+    if assumptions_overrides:
+        keys.extend(k for k in assumptions_overrides.keys() if k not in keys)
+    return sorted(set(keys))
+
+
+def _attach_run_manifests(
+    df: pd.DataFrame,
+    *,
+    ticker: str,
+    analysis_report_date: str,
+    assumptions_used: Dict[str, Any],
+    inputs: Dict[str, Any],
+    output_columns: List[str],
+    data_as_of: Dict[str, Any],
+    notes: List[str],
+    user_override_keys: List[str],
+    source: str,
+) -> pd.DataFrame:
+    """Attach one manifest per row without changing existing valuation columns."""
+    manifests = []
+    for _, row in df.iterrows():
+        outputs = {col: row.get(col) for col in output_columns if col in df.columns}
+        manifests.append(build_run_manifest(
+            ticker=ticker,
+            analysis_report_date=analysis_report_date,
+            assumptions_used=assumptions_used,
+            user_override_keys=user_override_keys,
+            inputs=inputs,
+            outputs=outputs,
+            data_as_of=data_as_of,
+            health_notes=notes,
+            source=source,
+        ))
+    out = df.copy()
+    out["Run_Manifest"] = manifests
+    return out
+
+
 def _normalized_fcf_baseline(fcf_series: pd.Series) -> Optional[float]:
     """Calculate normalized FCF baseline with outlier removal"""
     if fcf_series.empty:
@@ -275,6 +346,22 @@ def dcf_three_scenarios(
         fcf_window_years=fcf_window_years,
         terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
+    user_override_keys = _valuation_user_override_keys(
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        target_cagr_fallback=target_cagr_fallback,
+        fcf_window_years=fcf_window_years,
+        assumptions_overrides=assumptions_overrides,
+    )
+    manifest_inputs = {
+        "function": "dcf_three_scenarios",
+        "years": years,
+        "peer_tickers": [_sanitize_ticker(p) for p in peer_tickers] if peer_tickers else [],
+        "fcf_window_years": fcf_window_years,
+        "manual_baseline_fcf": manual_baseline_fcf,
+        "manual_growth_rates": manual_growth_rates,
+    }
+    data_as_of = _snapshot_data_as_of(snap, analysis_report_date)
     
     # Initialize notes list FIRST
     notes = []
@@ -322,10 +409,22 @@ def dcf_three_scenarios(
     if not _is_pos(avg_fcf):
         notes.append("FCF baseline not positive; per-share values will be None.")
         df = pd.DataFrame([
-            {"Scenario": "DCF_Lo_Growth_Lo_WACC", "Growth_Used": None, "WACC_Used": wacc_low, "Per_Share_Value": None, "Assumptions_Used": assumptions_used},
-            {"Scenario": "DCF_Mid_Growth_Mid_WACC","Growth_Used": None, "WACC_Used": wacc_mid, "Per_Share_Value": None, "Assumptions_Used": assumptions_used},
-            {"Scenario": "DCF_Hi_Growth_Hi_WACC", "Growth_Used": None, "WACC_Used": wacc_high, "Per_Share_Value": None, "Assumptions_Used": assumptions_used},
+            {"Scenario": "DCF_Lo_Growth_Lo_WACC", "Growth_Used": None, "WACC_Used": wacc_low, "Per_Share_Value": None, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)},
+            {"Scenario": "DCF_Mid_Growth_Mid_WACC","Growth_Used": None, "WACC_Used": wacc_mid, "Per_Share_Value": None, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)},
+            {"Scenario": "DCF_Hi_Growth_Hi_WACC", "Growth_Used": None, "WACC_Used": wacc_high, "Per_Share_Value": None, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)},
         ])
+        df = _attach_run_manifests(
+            df,
+            ticker=t,
+            analysis_report_date=analysis_report_date,
+            assumptions_used=assumptions_used,
+            inputs=manifest_inputs,
+            output_columns=["Scenario", "Growth_Used", "WACC_Used", "Per_Share_Value"],
+            data_as_of=data_as_of,
+            notes=notes,
+            user_override_keys=user_override_keys,
+            source="dcf_three_scenarios",
+        )
         if as_df:
             return df
         return to_records(df, analysis_report_date=analysis_report_date, notes=notes)
@@ -423,6 +522,18 @@ def dcf_three_scenarios(
         {"Scenario": "DCF_Mid_Growth_Mid_WACC","Growth_Used": gM, "WACC_Used": wacc_mid,  "Per_Share_Value": vMp, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)},
         {"Scenario": "DCF_Hi_Growth_Hi_WACC", "Growth_Used": gH, "WACC_Used": wacc_high,  "Per_Share_Value": vHp, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)},
     ])
+    df = _attach_run_manifests(
+        df,
+        ticker=t,
+        analysis_report_date=analysis_report_date,
+        assumptions_used=assumptions_used,
+        inputs={**manifest_inputs, "avg_fcf_used": avg_fcf, "shares_outstanding": so},
+        output_columns=["Scenario", "Growth_Used", "WACC_Used", "Per_Share_Value"],
+        data_as_of=data_as_of,
+        notes=notes,
+        user_override_keys=user_override_keys,
+        source="dcf_three_scenarios",
+    )
 
     if as_df:
         return df
@@ -555,7 +666,6 @@ def dcf_sensitivity_grid(
         fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
         terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
-
     notes: List[str] = []
 
     beta = _safe_float(snap.get("beta"))
@@ -720,6 +830,21 @@ def dcf_implied_enterprise_value(
         fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
         terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
+    user_override_keys = _valuation_user_override_keys(
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        target_cagr_fallback=target_cagr_fallback,
+        fcf_window_years=use_average_fcf_years,
+        assumptions_overrides=assumptions_overrides,
+    )
+    manifest_inputs = {
+        "function": "dcf_implied_enterprise_value",
+        "years": years,
+        "growth": growth,
+        "use_average_fcf_years": use_average_fcf_years,
+        "volatility_threshold": volatility_threshold,
+    }
+    data_as_of = _snapshot_data_as_of(snap, analysis_report_date)
 
     notes: List[str] = []
 
@@ -774,6 +899,18 @@ def dcf_implied_enterprise_value(
             "Ticker": t, "Avg_FCF_Used": None, "Growth_Used": None, "WACC_Used": wacc,
             "Years": 0 if years is None else int(years), "EV_Implied": None, "Assumptions_Used": assumptions_used, "Valuation_Confidence": valuation_confidence, "Notes": " ".join(notes)
         }])
+        df = _attach_run_manifests(
+            df,
+            ticker=t,
+            analysis_report_date=analysis_report_date,
+            assumptions_used=assumptions_used,
+            inputs=manifest_inputs,
+            output_columns=["Avg_FCF_Used", "Growth_Used", "WACC_Used", "Years", "EV_Implied"],
+            data_as_of=data_as_of,
+            notes=notes,
+            user_override_keys=user_override_keys,
+            source="dcf_implied_enterprise_value",
+        )
         return df if as_df else to_records(df, analysis_report_date=analysis_report_date, notes=notes)
 
     # Determine the averaging window
@@ -809,6 +946,18 @@ def dcf_implied_enterprise_value(
             "Ticker": t, "Avg_FCF_Used": avg_fcf, "Growth_Used": None, "WACC_Used": wacc,
             "Years": 0 if years is None else int(years), "EV_Implied": None, "Assumptions_Used": assumptions_used, "Valuation_Confidence": valuation_confidence, "Notes": " ".join(notes)
         }])
+        df = _attach_run_manifests(
+            df,
+            ticker=t,
+            analysis_report_date=analysis_report_date,
+            assumptions_used=assumptions_used,
+            inputs=manifest_inputs,
+            output_columns=["Avg_FCF_Used", "Growth_Used", "WACC_Used", "Years", "EV_Implied"],
+            data_as_of=data_as_of,
+            notes=notes,
+            user_override_keys=user_override_keys,
+            source="dcf_implied_enterprise_value",
+        )
         return df if as_df else to_records(df, analysis_report_date=analysis_report_date, notes=notes)
 
     # IMPROVED: Better growth estimation logic
@@ -904,6 +1053,18 @@ def dcf_implied_enterprise_value(
         "EV_Implied": float(ev) if _is_num(ev) else None,
         "Notes": " ".join(notes)
     }])
+    out = _attach_run_manifests(
+        out,
+        ticker=t,
+        analysis_report_date=analysis_report_date,
+        assumptions_used=assumptions_used,
+        inputs={**manifest_inputs, "available_fcf_points": available},
+        output_columns=["Avg_FCF_Used", "Growth_Used", "WACC_Used", "Years", "EV_Implied"],
+        data_as_of=data_as_of,
+        notes=notes,
+        user_override_keys=user_override_keys,
+        source="dcf_implied_enterprise_value",
+    )
     return out if as_df else to_records(out, analysis_report_date=analysis_report_date, notes=notes)
 
 
@@ -972,6 +1133,7 @@ def compare_to_market_ev(
         terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
     base_notes = implied_df.loc[0, "Notes"] or ""
+    upstream_manifest = implied_df.loc[0].get("Run_Manifest") if "Run_Manifest" in implied_df.columns else None
     upstream_conf = implied_df.loc[0, "Valuation_Confidence"] if "Valuation_Confidence" in implied_df.columns else None
     upstream_flags = dict(upstream_conf.get("flags", {})) if isinstance(upstream_conf, dict) else {}
     confidence_flags = dict(upstream_flags)
@@ -1043,6 +1205,32 @@ def compare_to_market_ev(
         "Valuation_Confidence": valuation_confidence,
         "Notes": " ".join([n for n in notes if n])
     }])
+    user_override_keys = _valuation_user_override_keys(
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        target_cagr_fallback=target_cagr_fallback,
+        fcf_window_years=use_average_fcf_years,
+        assumptions_overrides=assumptions_overrides,
+    )
+    out = _attach_run_manifests(
+        out,
+        ticker=t,
+        analysis_report_date=analysis_report_date,
+        assumptions_used=assumptions_used,
+        inputs={
+            "function": "compare_to_market_ev",
+            "years": years,
+            "growth": growth,
+            "use_average_fcf_years": use_average_fcf_years,
+            "volatility_threshold": volatility_threshold,
+            "upstream_manifest_id": upstream_manifest.get("manifest_id") if isinstance(upstream_manifest, dict) else None,
+        },
+        output_columns=["Observed_EV", "EV_Implied", "Premium_%", "Avg_FCF_Used", "Growth_Used", "WACC_Used", "Years"],
+        data_as_of={"analysis_report_date": analysis_report_date},
+        notes=[n for n in notes if n],
+        user_override_keys=user_override_keys,
+        source="compare_to_market_ev",
+    )
 
     return out if as_df else to_records(out, analysis_report_date=analysis_report_date, notes=[n for n in notes if n])
 
@@ -1232,6 +1420,7 @@ def compare_to_market_cap(
         terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
     base_notes = str(ev_df.iloc[0].get("Notes") or "")
+    upstream_manifest = ev_df.iloc[0].get("Run_Manifest") if "Run_Manifest" in ev_df.columns else None
     upstream_conf = ev_df.iloc[0].get("Valuation_Confidence") if "Valuation_Confidence" in ev_df.columns else None
     upstream_flags = dict(upstream_conf.get("flags", {})) if isinstance(upstream_conf, dict) else {}
     confidence_flags = dict(upstream_flags)
@@ -1318,6 +1507,36 @@ def compare_to_market_cap(
         "Valuation_Confidence": valuation_confidence,
         "Notes": " ".join([n for n in notes if n]).strip()
     }])
+    user_override_keys = _valuation_user_override_keys(
+        risk_free_rate=risk_free_rate,
+        equity_risk_premium=equity_risk_premium,
+        target_cagr_fallback=target_cagr_fallback,
+        fcf_window_years=use_average_fcf_years,
+        assumptions_overrides=assumptions_overrides,
+    )
+    out = _attach_run_manifests(
+        out,
+        ticker=t,
+        analysis_report_date=analysis_report_date,
+        assumptions_used=assumptions_used,
+        inputs={
+            "function": "compare_to_market_cap",
+            "years": years,
+            "growth": growth,
+            "use_average_fcf_years": use_average_fcf_years,
+            "volatility_threshold": volatility_threshold,
+            "upstream_manifest_id": upstream_manifest.get("manifest_id") if isinstance(upstream_manifest, dict) else None,
+        },
+        output_columns=[
+            "Observed_MarketCap", "Equity_Implied", "Premium_%", "EV_Implied",
+            "NetDebt", "CashAndCashEquivalents", "MinorityInterest",
+            "Avg_FCF_Used", "Growth_Used", "WACC_Used", "Years",
+        ],
+        data_as_of={"analysis_report_date": analysis_report_date},
+        notes=[n for n in notes if n],
+        user_override_keys=user_override_keys,
+        source="compare_to_market_cap",
+    )
 
     return out if as_df else to_records(
         out, analysis_report_date=analysis_report_date, notes=[n for n in notes if n]

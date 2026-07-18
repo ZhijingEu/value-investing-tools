@@ -319,6 +319,7 @@ VALUATION_DEFAULTS: Dict[str, float] = {
     "terminal_growth_gap": 0.005,  # g <= WACC - gap
 }
 VALUATION_ASSUMPTIONS_SCHEMA_VERSION = "1.1"
+RUN_MANIFEST_SCHEMA_VERSION = "1.0"
 
 
 def _valuation_assumptions_snapshot_id(payload: Dict[str, Any]) -> str:
@@ -351,12 +352,16 @@ def valuation_defaults(
     """
     Return a normalized assumptions payload for valuation outputs and audits.
     """
-    rf_source = "macro_config" if risk_free_rate is None else "user_override"
-    erp_source = "macro_config" if equity_risk_premium is None else "user_override"
+    rf_value = VALUATION_DEFAULTS["risk_free_rate"] if risk_free_rate is None else float(risk_free_rate)
+    erp_value = VALUATION_DEFAULTS["equity_risk_premium"] if equity_risk_premium is None else float(equity_risk_premium)
+    rf_source = "macro_config" if risk_free_rate is None or rf_value == VALUATION_DEFAULTS["risk_free_rate"] else "user_override"
+    erp_source = "macro_config" if equity_risk_premium is None or erp_value == VALUATION_DEFAULTS["equity_risk_premium"] else "user_override"
+    rf_as_of = MACRO_INPUTS.get("as_of") if rf_source == "macro_config" else as_of_date or _today_iso()
+    erp_as_of = MACRO_INPUTS.get("as_of") if erp_source == "macro_config" else as_of_date or _today_iso()
     payload = {
         "as_of_date": as_of_date or _today_iso(),
-        "risk_free_rate": VALUATION_DEFAULTS["risk_free_rate"] if risk_free_rate is None else float(risk_free_rate),
-        "equity_risk_premium": VALUATION_DEFAULTS["equity_risk_premium"] if equity_risk_premium is None else float(equity_risk_premium),
+        "risk_free_rate": rf_value,
+        "equity_risk_premium": erp_value,
         "target_cagr_fallback": VALUATION_DEFAULTS["target_cagr_fallback"] if target_cagr_fallback is None else float(target_cagr_fallback),
         "fcf_window_years": VALUATION_DEFAULTS["fcf_window_years"] if fcf_window_years is None else int(fcf_window_years),
         "terminal_growth_gap": VALUATION_DEFAULTS["terminal_growth_gap"] if terminal_growth_gap is None else float(terminal_growth_gap),
@@ -368,16 +373,16 @@ def valuation_defaults(
         "macro_load_status": MACRO_INPUTS.get("load_status"),
         "macro_inputs": {
             "risk_free_rate": {
-                "value": VALUATION_DEFAULTS["risk_free_rate"] if risk_free_rate is None else float(risk_free_rate),
+                "value": rf_value,
                 "source": rf_source,
-                "source_detail": MACRO_INPUTS.get("source") if risk_free_rate is None else "user supplied function argument",
-                "as_of": MACRO_INPUTS.get("as_of") if risk_free_rate is None else as_of_date or _today_iso(),
+                "source_detail": MACRO_INPUTS.get("source") if rf_source == "macro_config" else "user supplied function argument",
+                "as_of": rf_as_of,
             },
             "equity_risk_premium": {
-                "value": VALUATION_DEFAULTS["equity_risk_premium"] if equity_risk_premium is None else float(equity_risk_premium),
+                "value": erp_value,
                 "source": erp_source,
-                "source_detail": MACRO_INPUTS.get("source") if equity_risk_premium is None else "user supplied function argument",
-                "as_of": MACRO_INPUTS.get("as_of") if equity_risk_premium is None else as_of_date or _today_iso(),
+                "source_detail": MACRO_INPUTS.get("source") if erp_source == "macro_config" else "user supplied function argument",
+                "as_of": erp_as_of,
             },
         },
     }
@@ -385,6 +390,113 @@ def valuation_defaults(
         payload["macro_load_error"] = MACRO_INPUTS.get("load_error")
     payload["assumptions_snapshot_id"] = _valuation_assumptions_snapshot_id(payload)
     return payload
+
+
+def _json_safe_value(value: Any) -> Any:
+    """Return a JSON-friendly scalar/container for manifests and MCP payloads."""
+    if isinstance(value, (str, bool, int)) or value is None:
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        f = float(value)
+        return f if math.isfinite(f) else None
+    if isinstance(value, (dt.date, dt.datetime, pd.Timestamp)):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _json_safe_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe_value(v) for v in value]
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    return str(value)
+
+
+def _manifest_entries_from_assumptions(
+    assumptions_used: Optional[Dict[str, Any]],
+    *,
+    user_override_keys: Optional[List[str]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Normalize valuation assumptions into value/source/as_of manifest entries."""
+    assumptions_used = assumptions_used or valuation_defaults()
+    user_override_keys = set(user_override_keys or [])
+    entries: Dict[str, Dict[str, Any]] = {}
+
+    for key, entry in (assumptions_used.get("macro_inputs") or {}).items():
+        if isinstance(entry, dict):
+            entries[key] = {
+                "value": _json_safe_value(entry.get("value")),
+                "source": entry.get("source"),
+                "source_detail": entry.get("source_detail"),
+                "as_of": entry.get("as_of"),
+            }
+
+    non_macro_defaults = {
+        "target_cagr_fallback": VALUATION_DEFAULTS["target_cagr_fallback"],
+        "fcf_window_years": VALUATION_DEFAULTS["fcf_window_years"],
+        "terminal_growth_gap": VALUATION_DEFAULTS["terminal_growth_gap"],
+    }
+    for key, default in non_macro_defaults.items():
+        value = assumptions_used.get(key)
+        source = "user_override" if key in user_override_keys or value != default else "default"
+        entries[key] = {
+            "value": _json_safe_value(value),
+            "source": source,
+            "as_of": assumptions_used.get("as_of_date"),
+        }
+    return entries
+
+
+def build_run_manifest(
+    *,
+    ticker: str,
+    analysis_report_date: Optional[str] = None,
+    assumptions_used: Optional[Dict[str, Any]] = None,
+    user_override_keys: Optional[List[str]] = None,
+    inputs: Optional[Dict[str, Any]] = None,
+    outputs: Optional[Dict[str, Any]] = None,
+    data_as_of: Optional[Dict[str, Any]] = None,
+    health_notes: Optional[List[str]] = None,
+    source: str = "ValueInvestingTools",
+) -> Dict[str, Any]:
+    """
+    Build a compact audit manifest for valuation/orchestrator outputs.
+
+    The manifest is intentionally additive: callers keep their existing output
+    columns and include this payload where reproducibility matters.
+    """
+    assumptions_used = assumptions_used or valuation_defaults(as_of_date=analysis_report_date)
+    material = {
+        "ticker": _sanitize_ticker(ticker),
+        "analysis_report_date": analysis_report_date or _today_iso(),
+        "assumptions_snapshot_id": assumptions_used.get("assumptions_snapshot_id"),
+        "inputs": _json_safe_value(inputs or {}),
+        "outputs": _json_safe_value(outputs or {}),
+        "data_as_of": _json_safe_value(data_as_of or {}),
+    }
+    digest = hashlib.sha1(json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:12]
+    return {
+        "manifest_schema_version": RUN_MANIFEST_SCHEMA_VERSION,
+        "manifest_id": f"vit-run-{digest}",
+        "source": source,
+        "ticker": _sanitize_ticker(ticker),
+        "run_timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "analysis_report_date": analysis_report_date or _today_iso(),
+        "data_as_of": _json_safe_value(data_as_of or {}),
+        "assumptions_snapshot_id": assumptions_used.get("assumptions_snapshot_id"),
+        "assumptions": _manifest_entries_from_assumptions(
+            assumptions_used,
+            user_override_keys=user_override_keys,
+        ),
+        "inputs": _json_safe_value(inputs or {}),
+        "outputs": _json_safe_value(outputs or {}),
+        "health": [_json_safe_value(n) for n in (health_notes or []) if str(n).strip()],
+    }
 
 
 def _ensure_dir(path: str) -> None:
@@ -426,6 +538,8 @@ __all__ = [
     'MACRO_INPUTS',
     'VALUATION_DEFAULTS',
     'VALUATION_ASSUMPTIONS_SCHEMA_VERSION',
+    'RUN_MANIFEST_SCHEMA_VERSION',
     '_valuation_assumptions_snapshot_id',
     'valuation_defaults',
+    'build_run_manifest',
 ]

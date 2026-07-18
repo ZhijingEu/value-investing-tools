@@ -60,6 +60,17 @@ Note: The risk-free anchored cap is a stability guardrail aligned with stable-gr
 
 These are intentionally overrideable so you can align them to your own research standards.
 
+## Assumptions & Provenance Manifest
+Valuation outputs carry a `Run_Manifest` payload so a reader can reconstruct how a result was produced without reverse-engineering the code path. The manifest records:
+
+- function inputs, such as ticker, horizon, growth override, FCF window, and peer list where applicable;
+- assumption entries with value, source, source detail, and as-of date;
+- output values used in the valuation row;
+- lightweight data dating context, such as analysis report date and latest statement period when available;
+- health notes that disclose fallbacks, missing data, caps, floors, or conventions.
+
+The orchestrator returns a consolidated `run_manifest` with component manifest IDs. This is an audit trail, not a replacement for analyst review: it documents what VIT did and what it assumed, while leaving investment judgment to the user/LLM workflow.
+
 ## Override Mechanisms
 VIT exposes override hooks at the library and MCP layers:
 

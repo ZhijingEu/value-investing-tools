@@ -730,6 +730,7 @@ Returns DataFrame with columns: Scenario, Growth_Used, WACC_Used, Per_Share_Valu
 - Shared valuation defaults are exposed via `valuation_defaults(...)` for auditability.
 - `assumptions_as_of` can be passed to valuation functions to stamp the assumptions date in outputs.
 - `Assumptions_Used` payloads now include `assumptions_schema_version` and `assumptions_snapshot_id` for reproducible run-to-run comparison.
+- Valuation outputs also include `Run_Manifest`, a compact audit payload with inputs, assumption sources, output values, data dates, and health notes.
 
 **Advanced Controls for Transformational Companies**
 - `fcf_window_years=3` -> Use the latest 3 years of FCF by default. Set `None` to use all available FCF history, or set `1-3` to emphasize recent periods.
@@ -882,6 +883,10 @@ The `orchestrator_function` automatically collects health notes from all sub-fun
   ]
 }
 ```
+
+The orchestrator also returns `run_manifest`, a consolidated audit manifest that records the key inputs, price/data dates, valuation assumptions, component manifest IDs, and flattened health notes for the full run. If `save_csv=True`, the manifest is saved as JSON beside the other generated artifacts.
+
+Valuation functions such as `dcf_implied_enterprise_value`, `compare_to_market_ev`, `compare_to_market_cap`, and `dcf_three_scenarios` include a row-level `Run_Manifest` column for reproducibility at the individual output level.
 
 ## Rendering health reports
 Three helper functions convert health reports into human-friendly formats:

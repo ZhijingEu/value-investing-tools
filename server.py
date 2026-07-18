@@ -408,10 +408,12 @@ def tool_compare_to_market_ev(ticker: str, years: Optional[int]=None, risk_free_
       - growth: explicit terminal growth; otherwise uses FCF CAGR -> revenue CAGR -> fallback
       - assumptions_overrides: dict of guardrails (e.g., terminal_growth_gap, growth_floor)
     Output:
-      EV_Implied, Observed_EV, Premium_%, Valuation_Confidence, Notes, Assumptions_Used.
+      EV_Implied, Observed_EV, Premium_%, Valuation_Confidence, Notes,
+      Assumptions_Used, Run_Manifest.
     Interpretation:
       Premium > 0 implies market pricing higher growth/lower risk; check Notes for
-      volatility, missing data, or guardrail caps.
+      volatility, missing data, or guardrail caps. Use Run_Manifest to audit
+      inputs, assumption sources, and output values.
     """
     df = vit.compare_to_market_ev(ticker, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, growth=growth, target_cagr_fallback=target_cagr_fallback, use_average_fcf_years=use_average_fcf_years, volatility_threshold=volatility_threshold, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]
@@ -448,9 +450,11 @@ def tool_compare_to_market_cap(ticker_or_evdf: Union[str, List[Dict[str, Any]]],
       - ticker_or_evdf: ticker string or compare_to_market_ev output rows
       - assumptions_overrides: dict of valuation guardrails
     Output:
-      Equity_Implied, Observed_MarketCap, Premium_%, Valuation_Confidence, Notes.
+      Equity_Implied, Observed_MarketCap, Premium_%, Valuation_Confidence,
+      Notes, Assumptions_Used, Run_Manifest.
     Interpretation:
       Uses EV->Equity bridge; missing shares/market cap yields warnings in Notes.
+      Use Run_Manifest to trace upstream DCF assumptions and market comparison inputs.
     """
     # Accept a ticker string OR an ev_df_json (list[dict]) from compare_to_market_ev
     import pandas as pd
@@ -498,9 +502,11 @@ def tool_dcf_three_scenarios(ticker: str, peer_tickers: Optional[List[str]]=None
       - manual_growth_rates: [low, mid, high] overrides
       - assumptions_overrides: dict of guardrails (growth_floor, terminal_growth_gap, etc.)
     Output:
-      Scenario rows with Growth_Used, WACC_Used, Per_Share_Value, Assumptions_Used.
+      Scenario rows with Growth_Used, WACC_Used, Per_Share_Value,
+      Assumptions_Used, Run_Manifest.
     Interpretation:
       Use Notes/Assumptions_Used to explain caps/floors or volatility effects.
+      Use Run_Manifest for row-level reproducibility and provenance.
     """
     df = vit.dcf_three_scenarios(ticker, peer_tickers=peer_tickers, years=years, risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium, target_cagr_fallback=target_cagr_fallback, fcf_window_years=fcf_window_years, manual_baseline_fcf=manual_baseline_fcf, manual_growth_rates=manual_growth_rates, assumptions_as_of=assumptions_as_of, assumptions_overrides=assumptions_overrides, as_df=True)
     return [text_item(json.dumps(to_records_df(df), indent=2))]

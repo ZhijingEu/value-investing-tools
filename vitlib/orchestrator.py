@@ -3,11 +3,11 @@ from __future__ import annotations
 import inspect
 import json
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 
 import pandas as pd
 
-from vitlib.utils import _today_iso, to_records, VALUATION_DEFAULTS
+from vitlib.utils import _today_iso, _sanitize_ticker, build_run_manifest, valuation_defaults, VALUATION_DEFAULTS
 from vitlib.fundamentals import (
     historical_average_share_prices,
     historical_growth_metrics,
@@ -98,6 +98,35 @@ def _collect_health_block(source: str, x) -> List[Dict[str, Any]]:
         })
 
     return blocks
+
+
+def _collect_run_manifests(x) -> List[Dict[str, Any]]:
+    """Collect component manifests from DataFrame or dict outputs."""
+    manifests: List[Dict[str, Any]] = []
+    if isinstance(x, pd.DataFrame) and "Run_Manifest" in x.columns:
+        for item in x["Run_Manifest"].dropna().tolist():
+            if isinstance(item, dict):
+                manifests.append(item)
+    elif isinstance(x, dict):
+        if isinstance(x.get("Run_Manifest"), dict):
+            manifests.append(x["Run_Manifest"])
+        for value in x.values():
+            manifests.extend(_collect_run_manifests(value))
+    return manifests
+
+
+def _flatten_health_notes(blocks: List[Dict[str, Any]]) -> List[str]:
+    """Flatten orchestrator health blocks into short manifest notes."""
+    notes: List[str] = []
+    for block in blocks:
+        source = block.get("source")
+        ticker = block.get("ticker")
+        for note in block.get("notes") or []:
+            note_s = str(note).strip()
+            if note_s:
+                label = f"{source}/{ticker}" if ticker else str(source)
+                notes.append(f"{label}: {note_s}")
+    return sorted(set(notes))
 
 def orchestrator_function(
     target_ticker: str,
@@ -253,6 +282,68 @@ def orchestrator_function(
     health_blocks.extend(_collect_health_block("compare_to_market_cap", market_cap_vs_equity_df))
     health_blocks.extend(_collect_health_block("dcf_three_scenarios", dcf_df))
 
+    component_manifests: List[Dict[str, Any]] = []
+    for component in (ev_vs_market_df, market_cap_vs_equity_df, dcf_df):
+        component_manifests.extend(_collect_run_manifests(component))
+
+    assumptions_used = None
+    for component in (ev_vs_market_df, market_cap_vs_equity_df, dcf_df):
+        if isinstance(component, pd.DataFrame) and "Assumptions_Used" in component.columns and not component.empty:
+            candidate = component.iloc[0].get("Assumptions_Used")
+            if isinstance(candidate, dict):
+                assumptions_used = candidate
+                break
+    if assumptions_used is None:
+        assumptions_used = valuation_defaults(
+            as_of_date=assumptions_as_of or analysis_report_date,
+            risk_free_rate=risk_free_rate,
+            equity_risk_premium=equity_risk_premium,
+            target_cagr_fallback=target_cagr_fallback,
+            fcf_window_years=use_average_fcf_years if use_average_fcf_years is not None else VALUATION_DEFAULTS["fcf_window_years"],
+        )
+    user_override_keys: List[str] = []
+    if risk_free_rate != VALUATION_DEFAULTS["risk_free_rate"]:
+        user_override_keys.append("risk_free_rate")
+    if equity_risk_premium != VALUATION_DEFAULTS["equity_risk_premium"]:
+        user_override_keys.append("equity_risk_premium")
+    if target_cagr_fallback != VALUATION_DEFAULTS["target_cagr_fallback"]:
+        user_override_keys.append("target_cagr_fallback")
+    if use_average_fcf_years != VALUATION_DEFAULTS["fcf_window_years"]:
+        user_override_keys.append("fcf_window_years")
+
+    run_manifest = build_run_manifest(
+        ticker=t,
+        analysis_report_date=analysis_report_date,
+        assumptions_used=assumptions_used,
+        user_override_keys=user_override_keys,
+        inputs={
+            "function": "orchestrator_function",
+            "peer_tickers": peers_all,
+            "include_target_in_peers": include_target_in_peers,
+            "years": years,
+            "growth": growth,
+            "basis": basis,
+            "use_average_fcf_years": use_average_fcf_years,
+            "volatility_threshold": volatility_threshold,
+        },
+        outputs={
+            "avg_price_1d": avg_price_1d,
+            "avg_price_30d": avg_price_30d,
+            "avg_price_90d": avg_price_90d,
+            "avg_price_180d": avg_price_180d,
+            "component_manifest_ids": [
+                m.get("manifest_id") for m in component_manifests if isinstance(m, dict) and m.get("manifest_id")
+            ],
+        },
+        data_as_of={
+            "analysis_report_date": analysis_report_date,
+            "price_asof": price_asof,
+        },
+        health_notes=_flatten_health_notes(health_blocks),
+        source="orchestrator_function",
+    )
+    _save("run_manifest", run_manifest)
+
     # ---- Final payload ----
     return {
         "analysis_report_date": analysis_report_date,
@@ -273,6 +364,7 @@ def orchestrator_function(
         "market_cap_vs_equity": market_cap_vs_equity_df,
         "dcf_scenarios": dcf_df,
         "data_health_report": health_blocks,
+        "run_manifest": run_manifest,
     }
 
 
