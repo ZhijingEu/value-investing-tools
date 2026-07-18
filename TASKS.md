@@ -2,18 +2,23 @@
 
 This file tracks high-level planned work. Detailed working notes live in `docs/internal/` and are not published.
 
-## Current Focus (Next 1–3 Sprints)
-1. Implement ADR-0001 4x4 fundamentals framework (new API, scoring modes, tests).
-2. Implement ADR-0002 Piotroski F-Score module and plotting.
-3. Add valuation profiles (ADR-0004) and profile metadata in outputs.
+## Current Focus (Next 1-3 Sprints)
+1. Add an assumptions/provenance manifest to valuation and orchestrator outputs so runs can be audited and reproduced from one place.
+2. Run a provider field check for Piotroski F-Score inputs, especially long-term debt history and shares outstanding history.
+3. Implement a partial-capable Piotroski F-Score only if the provider field check supports graceful degradation.
 
 ## Upcoming (Later)
 - Consider runtime refresh detection for `data/damodaran_macro.json` so long-running MCP servers can pick up updated macro defaults without restart.
+- Revisit ADR-0001 4x4 fundamentals framework after the trust-release work is complete.
 - Introduce Forecast object pipeline (ADR-0005) and validation helpers.
 - HTTP/SSE MCP companion server (ADR-0006) with parity tests.
+- Add valuation profiles (ADR-0004) and profile metadata in outputs.
 - End-to-end example notebooks and screenshots.
 - Calibration and backtesting of scoring thresholds (see Roadmap Phase 10 summary).
 
+## Recently Completed
+- Externalized macro valuation defaults into `data/damodaran_macro.json` and surfaced provenance in valuation assumptions.
+- Added calculation hygiene guardrails for ratio denominators, CAGR endpoints, and WACC effective-tax-rate handling.
+
 ## Maintenance
 - Keep this summary aligned with Roadmap and ADR statuses after major updates.
-
