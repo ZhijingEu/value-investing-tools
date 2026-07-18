@@ -44,7 +44,7 @@ class TestValuationConfidence(unittest.TestCase):
             with patch.object(valuation, "_calculate_wacc", return_value=0.10):
                 with patch.object(valuation, "_fcf_series_from_cashflow", return_value=fcf_series):
                     with patch.object(valuation, "_normalized_fcf_baseline", return_value=60.0):
-                        with patch.object(valuation, "_fcf_cagr_from_series", return_value=None):
+                        with patch.object(valuation, "_fcf_cagr_details", return_value=(None, "FCF CAGR unavailable.", None)):
                             with patch.object(valuation, "_revenue_cagr_from_series", return_value=0.06):
                                 out = vit.dcf_implied_enterprise_value(
                                     "TEST",

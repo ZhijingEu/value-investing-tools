@@ -52,6 +52,9 @@ Note: The risk-free anchored cap is a stability guardrail aligned with stable-gr
 - Revenue CAGR haircut: `0.8` (conservative adjustment).
 - Scenario multipliers for Low/Mid/High growth: `0.6 / 1.0 / 1.3`.
 - Cost of debt clamps: min 2%, max 15%, fallback 4%.
+- Effective tax rate guardrail: compute only when pre-tax income is non-zero; clamp to 0%-35% for WACC stability, otherwise use the 21% default and disclose the convention in notes.
+- Ratio hygiene: only true zero denominators are treated as N/M; negative denominators are computed with their sign and noted.
+- CAGR hygiene: CAGR requires positive first and last values; non-positive endpoints are flagged instead of forcing a sign-flipped growth rate.
 - Peer comparability thresholds: coverage 60%, dispersion rules by metric.
 - Fundamentals scoring thresholds and weights (see `vitlib/fundamentals.py`).
 
@@ -72,7 +75,7 @@ Use these keys in the override dicts to tune guardrails without modifying core l
 
 | Override Dict | Supported Keys (non-exhaustive) | Affects |
 |---|---|---|
-| `assumptions_overrides` | `terminal_growth_gap`, `terminal_growth_rfr_spread`, `terminal_growth_cap_mode`, `growth_floor`, `fcf_cagr_bounds`, `rev_cagr_bounds`, `revenue_cagr_haircut`, `wacc_spread_low`, `wacc_spread_high`, `scenario_growth_multipliers`, `cost_of_debt_fallback`, `cost_of_debt_min`, `cost_of_debt_max`, `tax_rate_default`, `tax_rate_cap`, `ev_fcf_multiple_warn_high`, `ev_fcf_multiple_warn_low`, `premium_band_small`, `premium_band_large`, `cov_moderate` | DCF growth bounds, WACC bounds, EV/FCF warnings, premium interpretation bands, volatility notes |
+| `assumptions_overrides` | `terminal_growth_gap`, `terminal_growth_rfr_spread`, `terminal_growth_cap_mode`, `growth_floor`, `fcf_cagr_bounds`, `rev_cagr_bounds`, `revenue_cagr_haircut`, `wacc_spread_low`, `wacc_spread_high`, `scenario_growth_multipliers`, `cost_of_debt_fallback`, `cost_of_debt_min`, `cost_of_debt_max`, `tax_rate_default`, `tax_rate_floor`, `tax_rate_cap`, `ev_fcf_multiple_warn_high`, `ev_fcf_multiple_warn_low`, `premium_band_small`, `premium_band_large`, `cov_moderate` | DCF growth bounds, WACC bounds, tax-rate guardrails, EV/FCF warnings, premium interpretation bands, volatility notes |
 | `scoring_overrides` | `thresholds`, `weights`, `data_incomplete_threshold`, `recommendation_cutoffs` | Fundamentals scoring thresholds, factor weights, data completeness gate, recommendation logic |
 | `diagnostics_overrides` | `coverage_warn_threshold`, `metric_specs` | Peer comparability diagnostics coverage/dispersion thresholds |
 

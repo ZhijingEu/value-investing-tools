@@ -18,6 +18,8 @@ from vitlib.utils import (
     _is_num,
     _is_pos,
     _safe_float,
+    _safe_ratio,
+    _safe_cagr,
     _pct_from_info,
     _ensure_dir,
     _provider_ticker,
@@ -251,6 +253,7 @@ def compute_fundamentals_actuals(
     for raw in tickers:
         ticker = _sanitize_ticker(raw)
         try:
+            row_notes: List[str] = []
             info, financials, cashflow, balance, period_range, min_periods = _fetch_statements(ticker)
 
             # persist raw statements
@@ -324,8 +327,12 @@ def compute_fundamentals_actuals(
                         for i in range(balance.shape[1]):
                             total_debt_i = _safe_float(total_debt_row.iloc[i])
                             common_eq_i  = _safe_float(common_eq_row.iloc[i])
-                            if _is_pos(total_debt_i) and _is_pos(common_eq_i):
-                                de_vals.append(total_debt_i / common_eq_i)
+                            if total_debt_i is not None:
+                                de_value, de_note = _safe_ratio(total_debt_i, common_eq_i, denominator_label="common_equity")
+                                if de_value is not None:
+                                    de_vals.append(de_value)
+                                if de_note:
+                                    row_notes.append(f"Debt/Equity {balance.columns[i]}: {de_note}")
                 de_ratio = float(np.mean(de_vals)) if len(de_vals) >= 2 else None
             except Exception:
                 de_ratio = None
@@ -363,12 +370,16 @@ def compute_fundamentals_actuals(
                     reinvestment_rate_ttm = (float(ni_ttm) + float(div_ttm)) / float(ni_ttm)
 
                 capex_ratio_ttm = None
-                if capex_ttm is not None and rev_ttm not in (None, 0):
-                    capex_ratio_ttm = abs(float(capex_ttm)) / float(rev_ttm)
+                if capex_ttm is not None:
+                    capex_ratio_ttm, capex_note = _safe_ratio(abs(float(capex_ttm)), rev_ttm, denominator_label="revenue_TTM")
+                    if capex_note:
+                        row_notes.append(f"CapexRatio TTM: {capex_note}")
 
                 de_ratio_ttm = None
-                if equity_latest not in (None, 0) and debt_latest is not None:
-                    de_ratio_ttm = float(debt_latest) / float(equity_latest)
+                if debt_latest is not None:
+                    de_ratio_ttm, de_note = _safe_ratio(debt_latest, equity_latest, denominator_label="equity_latestQ")
+                    if de_note:
+                        row_notes.append(f"Debt/Equity TTM: {de_note}")
 
                 # Select values by basis
                 if basis == "ttm":
@@ -393,14 +404,30 @@ def compute_fundamentals_actuals(
                         ni   = ni.iloc[order]
 
                         # Revenue CAGR
-                        if len(revs) >= 3 and revs.iloc[0] > 0 and revs.iloc[-1] > 0:
+                        if len(revs) >= 3:
                             n = len(revs) - 1
-                            revenue_cagr = (revs.iloc[-1] / revs.iloc[0]) ** (1/n) - 1.0
+                            revenue_cagr, revenue_reason, revenue_abs_change = _safe_cagr(
+                                revs.iloc[0], revs.iloc[-1], n, label="Revenue"
+                            )
+                            if revenue_reason:
+                                row_notes.append(revenue_reason)
+                            if revenue_abs_change is not None and revenue_cagr is None:
+                                row_notes.append(f"Revenue absolute change over observed window: {revenue_abs_change:.3g}.")
+                        else:
+                            row_notes.append("Revenue CAGR undefined (<3 clean annual points).")
 
                         # Earnings CAGR
-                        if len(ni) >= 3 and ni.iloc[0] > 0 and ni.iloc[-1] > 0:
+                        if len(ni) >= 3:
                             n = len(ni) - 1
-                            earnings_cagr = (ni.iloc[-1] / ni.iloc[0]) ** (1/n) - 1.0
+                            earnings_cagr, earnings_reason, earnings_abs_change = _safe_cagr(
+                                ni.iloc[0], ni.iloc[-1], n, label="Earnings"
+                            )
+                            if earnings_reason:
+                                row_notes.append(earnings_reason)
+                            if earnings_abs_change is not None and earnings_cagr is None:
+                                row_notes.append(f"Earnings absolute change over observed window: {earnings_abs_change:.3g}.")
+                        else:
+                            row_notes.append("Earnings CAGR undefined (<3 clean annual points).")
             except Exception:
                 revenue_cagr = earnings_cagr = None
 
@@ -438,7 +465,7 @@ def compute_fundamentals_actuals(
                             capex = cashflow.loc['Capital Expenditure'].iloc[i]
                         if 'Total Revenue' in financials.index:
                             revenue = financials.loc['Total Revenue'].iloc[i]            
-                        if capex is not None and revenue is not None and float(revenue) > 0:
+                        if capex is not None and revenue is not None and float(revenue) != 0:
                             capex_list.append(float(abs(capex)))   # negative CapEx (outflow) → use magnitude
                             revenue_list.append(float(revenue))
                 capex_ratio_avg = (float(np.mean([c / r for c, r in zip(capex_list, revenue_list)]))
@@ -479,7 +506,8 @@ def compute_fundamentals_actuals(
                 "revenue_cagr": revenue_cagr, "earnings_cagr": earnings_cagr, "peg": peg,
                 "reinvestment_rate": reinvestment_rate, "capex_ratio": capex_ratio,
                 "de_ratio": de_ratio, "beta": beta, "current_ratio": current_ratio,
-                "period_range": period_range_out, "period_count": period_count_out})
+                "period_range": period_range_out, "period_count": period_count_out,
+                "Notes": " ".join(sorted(set(n for n in row_notes if n))).strip()})
 
         except Exception as e:
             rows.append({
@@ -487,6 +515,7 @@ def compute_fundamentals_actuals(
                 "revenue_cagr": None, "earnings_cagr": None, "peg": None,
                 "reinvestment_rate": None, "capex_ratio": None, "de_ratio": None,
                 "beta": None, "current_ratio": None, "period_range": None, "period_count": 0,
+                "Notes": f"{type(e).__name__}: {e}",
                 "_error": f"{type(e).__name__}: {e}"
             })
 
@@ -850,11 +879,10 @@ def compute_profitability_timeseries(
         avg_assets = _avg_pair(assets, assets_prev)
 
         def safe_div(num, den, den_name):
-            if num is None or den is None:
-                notes.append(f"{den_name} missing"); return np.nan
-            if den == 0:
-                notes.append(f"{den_name} = 0"); return np.nan
-            return float(num) / float(den)
+            value, note = _safe_ratio(num, den, denominator_label=den_name)
+            if note:
+                notes.append(note)
+            return np.nan if value is None else value
 
         roe = safe_div(ni, avg_eq, "avg_equity")
         roa = safe_div(ni, avg_assets, "avg_assets")
@@ -890,11 +918,10 @@ def compute_profitability_timeseries(
         latest_assets = None if s_assets_q is None or s_assets_q.empty else float(s_assets_q.iloc[0])
 
         def safe_div_ttm(num, den, den_name):
-            if num is None or den is None:
-                notes.append(f"{den_name} missing for TTM"); return np.nan
-            if den == 0:
-                notes.append(f"{den_name} = 0 for TTM"); return np.nan
-            return float(num) / float(den)
+            value, note = _safe_ratio(num, den, denominator_label=den_name)
+            if note:
+                notes.append(f"{note} for TTM")
+            return np.nan if value is None else value
 
         roe_ttm = safe_div_ttm(ttm_ni, latest_eq, "equity_latestQ")
         roa_ttm = safe_div_ttm(ttm_ni, latest_assets, "assets_latestQ")
@@ -952,13 +979,9 @@ def compute_liquidity_timeseries(
         def _val(series): return None if series is None or c not in series.index else (None if pd.isna(series[c]) else float(series[c]))
         ca = _val(s_ca); cl = _val(s_cl)
         notes = []
-        if ca is None: notes.append("current_assets missing")
-        if cl is None: notes.append("current_liabilities missing")
-        if cl == 0:    notes.append("current_liabilities = 0")
-
-        cr = np.nan
-        if ca is not None and cl not in (None, 0):
-            cr = float(ca) / float(cl)
+        cr_value, cr_note = _safe_ratio(ca, cl, denominator_label="current_liabilities")
+        if cr_note: notes.append(cr_note)
+        cr = np.nan if cr_value is None else cr_value
 
         rows.append({
             "Period": str(pd.to_datetime(c).year if not isinstance(c, str) else c),
@@ -976,13 +999,9 @@ def compute_liquidity_timeseries(
         ca_q = None if s_ca_q is None or s_ca_q.empty else float(s_ca_q.iloc[0])
         cl_q = None if s_cl_q is None or s_cl_q.empty else float(s_cl_q.iloc[0])
         notes = []
-        if ca_q is None: notes.append("current_assets latestQ missing")
-        if cl_q is None: notes.append("current_liabilities latestQ missing")
-        if cl_q == 0:    notes.append("current_liabilities latestQ = 0")
-
-        cr_q = np.nan
-        if ca_q is not None and cl_q not in (None, 0):
-            cr_q = float(ca_q) / float(cl_q)
+        cr_q_value, cr_q_note = _safe_ratio(ca_q, cl_q, denominator_label="current_liabilities latestQ")
+        if cr_q_note: notes.append(cr_q_note)
+        cr_q = np.nan if cr_q_value is None else cr_q_value
 
         df_annual = pd.concat([df_annual, pd.DataFrame([{
             "Period": "LatestQ",
@@ -1216,12 +1235,8 @@ def historical_growth_metrics(
         tickers = [tickers]
 
     def _cagr(first, last, n_years):
-        try:
-            if _is_num(first) and _is_num(last) and n_years > 0 and first > 0 and last > 0:
-                return (last / first) ** (1.0 / n_years) - 1.0
-        except Exception:
-            pass
-        return None
+        cagr, _, _ = _safe_cagr(first, last, n_years, label="Series")
+        return cagr
 
     def _annual_series(df, field):
         if not isinstance(df, pd.DataFrame) or field not in df.index:

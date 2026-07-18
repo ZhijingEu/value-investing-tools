@@ -72,6 +72,60 @@ def _safe_float(x) -> Optional[float]:
     except Exception:
         return None
 
+
+def _safe_ratio(
+    numerator: Any,
+    denominator: Any,
+    *,
+    denominator_label: str = "denominator",
+) -> Tuple[Optional[float], Optional[str]]:
+    """
+    Compute a ratio while preserving meaningful negative values.
+
+    A ratio is N/M only for missing inputs or a true zero denominator. Negative
+    denominators are computed and noted because they can carry analytical signal
+    (for example negative equity).
+    """
+    num = _safe_float(numerator)
+    den = _safe_float(denominator)
+    if num is None:
+        return None, "numerator missing"
+    if den is None:
+        return None, f"{denominator_label} missing"
+    if den == 0:
+        return None, f"{denominator_label} = 0; ratio N/M"
+    value = num / den
+    if den < 0:
+        return value, f"{denominator_label} negative; ratio computed with sign"
+    if value < 0:
+        return value, "ratio negative; check sign combination"
+    return value, None
+
+
+def _safe_cagr(
+    first: Any,
+    last: Any,
+    n_years: int,
+    *,
+    label: str = "Series",
+) -> Tuple[Optional[float], Optional[str], Optional[float]]:
+    """
+    Compute CAGR only when endpoints are positive.
+
+    If CAGR is undefined, return the absolute change as context instead of
+    manufacturing a sign-flipped growth rate.
+    """
+    first_f = _safe_float(first)
+    last_f = _safe_float(last)
+    if first_f is None or last_f is None:
+        return None, f"{label} CAGR undefined (missing endpoint).", None
+    absolute_change = last_f - first_f
+    if n_years <= 0:
+        return None, f"{label} CAGR undefined (non-positive year span).", absolute_change
+    if first_f <= 0 or last_f <= 0:
+        return None, f"{label} CAGR undefined (first/last <= 0); absolute change reported instead.", absolute_change
+    return (last_f / first_f) ** (1.0 / n_years) - 1.0, None, absolute_change
+
 def _equity_value_from_ev(
     ev: Optional[float],
     *,
@@ -360,6 +414,8 @@ __all__ = [
     '_is_num',
     '_is_pos',
     '_safe_float',
+    '_safe_ratio',
+    '_safe_cagr',
     '_equity_value_from_ev',
     '_valuation_confidence_from_flags',
     '_ensure_dir',

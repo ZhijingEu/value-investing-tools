@@ -10,6 +10,7 @@ from vitlib.utils import (
     _is_num,
     _is_pos,
     _safe_float,
+    _safe_cagr,
     _equity_value_from_ev,
     _valuation_confidence_from_flags,
     _fcf_series_from_cashflow,
@@ -28,6 +29,7 @@ DEFAULT_GUARDRAILS: Dict[str, Any] = {
     "cost_of_debt_min": 0.02,
     "cost_of_debt_max": 0.15,
     "tax_rate_default": 0.21,
+    "tax_rate_floor": 0.0,
     "tax_rate_cap": 0.35,
     "fcf_cagr_bounds": (-0.3, 0.3),
     "rev_cagr_bounds": (-0.3, 0.3),
@@ -94,8 +96,10 @@ def _calculate_wacc(
     equity_risk_premium: float,
     beta: float,
     guardrails: Optional[Dict[str, Any]] = None,
+    return_details: bool = False,
 ) -> Optional[float]:
     """Calculate proper WACC including debt costs"""
+    notes: List[str] = []
     try:
         # Get balance sheet data
         ticker_obj = _provider_ticker(snap['ticker'])
@@ -104,12 +108,14 @@ def _calculate_wacc(
         
         if bs.empty or income.empty:
             # Fallback to cost of equity if no debt data
-            return risk_free_rate + beta * equity_risk_premium
+            wacc = risk_free_rate + beta * equity_risk_premium
+            notes.append("WACC fell back to cost of equity because debt/income statement data was unavailable.")
+            return (wacc, notes) if return_details else wacc
         
         # Market value of equity
         market_cap = _safe_float(snap.get('market_cap'))
         if not _is_pos(market_cap):
-            return None
+            return (None, ["WACC unavailable because market cap is missing or non-positive."]) if return_details else None
             
         # Book value of debt (total debt)
         total_debt = 0
@@ -123,7 +129,9 @@ def _calculate_wacc(
         
         # If no debt, return cost of equity
         if total_debt <= 0:
-            return risk_free_rate + beta * equity_risk_premium
+            wacc = risk_free_rate + beta * equity_risk_premium
+            notes.append("WACC reduced to cost of equity because total debt was zero or unavailable.")
+            return (wacc, notes) if return_details else wacc
         
         # Cost of debt approximation
         interest_expense = 0
@@ -139,11 +147,20 @@ def _calculate_wacc(
         pretax_income = _safe_float(income.loc['Pretax Income'].iloc[0]) if 'Pretax Income' in income.index else None
         net_income = _safe_float(income.loc['Net Income'].iloc[0]) if 'Net Income' in income.index else None
         
-        if _is_pos(pretax_income) and _is_num(net_income):
-            tax_rate = max(0, (pretax_income - net_income) / pretax_income)
-            tax_rate = min(tax_rate, guardrails["tax_rate_cap"])
+        if _is_num(pretax_income) and float(pretax_income) != 0 and _is_num(net_income):
+            raw_tax_rate = (float(pretax_income) - float(net_income)) / float(pretax_income)
+            tax_rate = raw_tax_rate
+            floor = float(guardrails["tax_rate_floor"])
+            cap = float(guardrails["tax_rate_cap"])
+            if tax_rate < floor:
+                tax_rate = floor
+                notes.append(f"Effective tax rate clamped from {raw_tax_rate:.1%} to {floor:.1%}.")
+            elif tax_rate > cap:
+                tax_rate = cap
+                notes.append(f"Effective tax rate clamped from {raw_tax_rate:.1%} to {cap:.1%}.")
         else:
             tax_rate = guardrails["tax_rate_default"]
+            notes.append("Effective tax rate unavailable or pretax income = 0; using default tax rate.")
         
         # Calculate weights
         total_value = market_cap + total_debt
@@ -156,25 +173,32 @@ def _calculate_wacc(
         # WACC calculation
         wacc = (equity_weight * cost_of_equity) + (debt_weight * cost_of_debt * (1 - tax_rate))
         
-        return wacc
+        return (wacc, notes) if return_details else wacc
         
-    except Exception:
+    except Exception as exc:
         # Fallback to cost of equity
-        return risk_free_rate + beta * equity_risk_premium
+        wacc = risk_free_rate + beta * equity_risk_premium
+        notes.append(f"WACC fell back to cost of equity after calculation error: {str(exc)[:80]}.")
+        return (wacc, notes) if return_details else wacc
+
+def _fcf_cagr_details(fcf_series: pd.Series) -> Tuple[Optional[float], Optional[str], Optional[float]]:
+    """Calculate FCF CAGR from newest-first provider data with endpoint guardrails."""
+    if not isinstance(fcf_series, pd.Series) or len(fcf_series.dropna()) < 3:
+        return None, "FCF CAGR undefined (<3 clean annual points).", None
+    s = fcf_series.dropna().astype(float)
+    start = _safe_float(s.iloc[-1])
+    end = _safe_float(s.iloc[0])
+    years = len(s) - 1
+    cagr, reason, absolute_change = _safe_cagr(start, end, years, label="FCF")
+    if cagr is not None and not (-0.5 <= cagr <= 0.5):
+        return None, f"FCF CAGR outside stability bounds ({cagr:.1%}); absolute change reported instead.", absolute_change
+    return cagr, reason, absolute_change
+
 
 def _fcf_cagr_from_series(fcf_series: pd.Series) -> Optional[float]:
-    """Calculate FCF CAGR from time series"""
-    if isinstance(fcf_series, pd.Series) and len(fcf_series) >= 3:
-        # Remove zeros and negatives for CAGR calculation
-        positive_fcf = fcf_series[fcf_series > 0]
-        if len(positive_fcf) >= 3:
-            start = _safe_float(positive_fcf.iloc[-1])
-            end = _safe_float(positive_fcf.iloc[0])
-            years = len(positive_fcf) - 1
-            if _is_pos(start) and _is_pos(end) and years > 0:
-                cagr = (end / start) ** (1/years) - 1
-                return cagr if -0.5 <= cagr <= 0.5 else None
-    return None
+    """Calculate FCF CAGR from time series, returning None when undefined or unstable."""
+    cagr, _, _ = _fcf_cagr_details(fcf_series)
+    return cagr
 
 
 def _normalized_fcf_baseline(fcf_series: pd.Series) -> Optional[float]:
@@ -260,7 +284,19 @@ def dcf_three_scenarios(
         raise ValueError(f"Missing beta from provider for {t}. Cannot compute WACC.")
 
     # Calculate proper WACC
-    wacc_mid = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta, guardrails=guardrails)
+    wacc_result = _calculate_wacc(
+        snap,
+        risk_free_rate,
+        equity_risk_premium,
+        beta,
+        guardrails=guardrails,
+        return_details=True,
+    )
+    if isinstance(wacc_result, tuple):
+        wacc_mid, wacc_notes = wacc_result
+    else:
+        wacc_mid, wacc_notes = wacc_result, []
+    notes.extend(wacc_notes)
     if wacc_mid is None:
         raise ValueError(f"Cannot calculate WACC for {t}. Missing required financial data.")
 
@@ -308,16 +344,18 @@ def dcf_three_scenarios(
                 try:
                     peer_snap = _pull_company_snapshot(_sanitize_ticker(p))
                     peer_fcf_series = _fcf_series_from_cashflow(peer_snap['cashflow'])
-                    c = _fcf_cagr_from_series(peer_fcf_series)
+                    c, c_reason, _ = _fcf_cagr_details(peer_fcf_series)
                     lo_b, hi_b = guardrails["fcf_cagr_bounds"]
                     if _is_num(c) and lo_b <= c <= hi_b:
                         peer_fcf_cagrs.append(float(c))
+                    elif c_reason:
+                        notes.append(f"{_sanitize_ticker(p)} peer FCF growth skipped: {c_reason}")
                 except Exception:
                     continue
 
         # Try FCF CAGR first, then revenue CAGR as fallback
         target_fcf_series = fcf_series if fcf_window_years is None else _fcf_series_from_cashflow(snap['cashflow'])
-        fcf_cagr_target = _fcf_cagr_from_series(target_fcf_series)
+        fcf_cagr_target, fcf_cagr_reason, fcf_abs_change = _fcf_cagr_details(target_fcf_series)
         rev_cagr_target = _revenue_cagr_from_series(snap["revenue_series"])
         
         if len(peer_fcf_cagrs) >= 3:
@@ -330,6 +368,10 @@ def dcf_three_scenarios(
                 base = fcf_cagr_target
                 notes.append("Growth rates based on target FCF CAGR")
             else:
+                if fcf_cagr_reason:
+                    notes.append(f"Target FCF growth skipped: {fcf_cagr_reason}")
+                if fcf_abs_change is not None:
+                    notes.append(f"Target FCF absolute change over observed window: {fcf_abs_change:.3g}.")
                 r_lo_b, r_hi_b = guardrails["rev_cagr_bounds"]
                 if _is_num(rev_cagr_target) and r_lo_b <= rev_cagr_target <= r_hi_b:
                     base = rev_cagr_target * float(guardrails["revenue_cagr_haircut"])
@@ -377,9 +419,9 @@ def dcf_three_scenarios(
             notes.append(f"Note: EV/FCF multiple of {ev_fcf_multiple:.1f}x is relatively low.")
 
     df = pd.DataFrame([
-        {"Scenario": "DCF_Lo_Growth_Lo_WACC", "Growth_Used": gL, "WACC_Used": wacc_low, "Per_Share_Value": vLp, "Assumptions_Used": assumptions_used},
-        {"Scenario": "DCF_Mid_Growth_Mid_WACC","Growth_Used": gM, "WACC_Used": wacc_mid,  "Per_Share_Value": vMp, "Assumptions_Used": assumptions_used},
-        {"Scenario": "DCF_Hi_Growth_Hi_WACC", "Growth_Used": gH, "WACC_Used": wacc_high,  "Per_Share_Value": vHp, "Assumptions_Used": assumptions_used},
+        {"Scenario": "DCF_Lo_Growth_Lo_WACC", "Growth_Used": gL, "WACC_Used": wacc_low, "Per_Share_Value": vLp, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)},
+        {"Scenario": "DCF_Mid_Growth_Mid_WACC","Growth_Used": gM, "WACC_Used": wacc_mid,  "Per_Share_Value": vMp, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)},
+        {"Scenario": "DCF_Hi_Growth_Hi_WACC", "Growth_Used": gH, "WACC_Used": wacc_high,  "Per_Share_Value": vHp, "Assumptions_Used": assumptions_used, "Notes": " ".join(notes)},
     ])
 
     if as_df:
@@ -679,14 +721,28 @@ def dcf_implied_enterprise_value(
         terminal_growth_gap=assumptions_overrides.get("terminal_growth_gap") if assumptions_overrides else None,
     )
 
+    notes: List[str] = []
+
     # --- IMPROVED: Calculate proper WACC ---
     beta = _safe_float(snap.get("beta"))
     if beta is None:
         raise ValueError(f"Missing beta from provider for {t}. Cannot compute WACC.")
     
     # Use the improved WACC calculation
-    wacc = _calculate_wacc(snap, risk_free_rate, equity_risk_premium, beta, guardrails=guardrails)
-    used_cost_of_equity_fallback = False
+    wacc_result = _calculate_wacc(
+        snap,
+        risk_free_rate,
+        equity_risk_premium,
+        beta,
+        guardrails=guardrails,
+        return_details=True,
+    )
+    if isinstance(wacc_result, tuple):
+        wacc, wacc_notes = wacc_result
+    else:
+        wacc, wacc_notes = wacc_result, []
+    notes.extend(wacc_notes)
+    used_cost_of_equity_fallback = any("cost of equity" in str(n).lower() for n in wacc_notes)
     if wacc is None:
         # Fallback to cost of equity if WACC calculation fails
         wacc = risk_free_rate + beta * equity_risk_premium
@@ -694,7 +750,6 @@ def dcf_implied_enterprise_value(
 
     # FCF series (Operating CF - CapEx) - using corrected calculation
     fcf_series_all = _fcf_series_from_cashflow(snap.get('cashflow'))
-    notes: List[str] = []
     confidence_flags: Dict[str, bool] = {
         "used_cost_of_equity_fallback": used_cost_of_equity_fallback,
         "missing_fcf_history": False,
@@ -762,7 +817,7 @@ def dcf_implied_enterprise_value(
         notes.append("Using user-provided growth rate.")
     else:
         # Try FCF CAGR first, then revenue CAGR, then fallback
-        fcf_cagr = _fcf_cagr_from_series(fcf_series_all)
+        fcf_cagr, fcf_cagr_reason, fcf_abs_change = _fcf_cagr_details(fcf_series_all)
         rev_cagr = _revenue_cagr_from_series(snap.get('revenue_series'))
         
         lo_b, hi_b = guardrails["fcf_cagr_bounds"]
@@ -770,6 +825,10 @@ def dcf_implied_enterprise_value(
             g = fcf_cagr
             notes.append("Using historical FCF CAGR for growth.")
         else:
+            if fcf_cagr_reason:
+                notes.append(f"Historical FCF CAGR skipped: {fcf_cagr_reason}")
+            if fcf_abs_change is not None:
+                notes.append(f"Historical FCF absolute change over observed window: {fcf_abs_change:.3g}.")
             r_lo_b, r_hi_b = guardrails["rev_cagr_bounds"]
             if _is_num(rev_cagr) and r_lo_b <= rev_cagr <= r_hi_b:
                 g = rev_cagr * float(guardrails["revenue_cagr_haircut"])
